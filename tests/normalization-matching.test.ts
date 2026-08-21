@@ -14,15 +14,15 @@ const search = {
 };
 
 describe('normalization', () => {
-  it('maps redbus provider fields without inventing data', () => {
+  it('maps redbus Bright Data fields without inventing data', () => {
     const adapter = new RedBusAdapter();
     const [listing] = adapter.adapt(
       {
-        listings: [
+        records: [
           {
-            travels: 'VRL',
-            deptTime: '9:30 PM',
-            fare: '₹1,224',
+            operator_name: 'VRL',
+            departure_time: '21:30',
+            price: { value: 1224, currency: 'INR' },
           },
         ],
       },
@@ -41,7 +41,14 @@ describe('normalization', () => {
     service.register(new AbhiBusAdapter());
     const listings = service.normalize(
       'abhibus',
-      { listings: [{ operator: 'SRS', price: 999 }] },
+      {
+        records: [
+          {
+            operator_name: 'SRS',
+            pricing: { value: 999, currency: 'INR' },
+          },
+        ],
+      },
       search,
     );
     expect(listings).toHaveLength(1);
