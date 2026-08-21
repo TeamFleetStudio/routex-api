@@ -30,6 +30,14 @@ const envSchema = z.object({
   MMT_API_KEY: z.string().optional().default(''),
   SELF_HEALING_API_URL: z.string().optional().default(''),
   SELF_HEALING_API_KEY: z.string().optional().default(''),
+  BRIGHT_DATA_API_TOKEN: z.string().optional().default(''),
+  BRIGHT_DATA_BASE_URL: z.string().default('https://api.brightdata.com'),
+  REDBUS_COLLECTOR_ID: z.string().default('c_mt2zg2lg2mzr0gwzzr'),
+  ABHIBUS_COLLECTOR_ID: z.string().default('c_mt3098pc2d2if01a7g'),
+  BRIGHT_DATA_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
+  BRIGHT_DATA_MAX_POLL_ATTEMPTS: z.coerce.number().int().positive().default(60),
+  BRIGHT_DATA_SOURCE_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
+  ABHIBUS_RESULT_LIMIT: z.coerce.number().int().positive().default(10),
 });
 
 export type Env = z.infer<typeof envSchema>;
