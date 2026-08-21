@@ -30,6 +30,7 @@ import { AbhiBusSourceClient } from '../sources/implementations/abhibus/abhibus.
 import { AbhiBusAdapter } from '../sources/implementations/abhibus/abhibus.adapter.js';
 import { MMTSourceClient } from '../sources/implementations/makemytrip/makemytrip.client.js';
 import { MakeMyTripAdapter } from '../sources/implementations/makemytrip/makemytrip.adapter.js';
+import { BrightDataClient } from '../sources/implementations/brightdata/bright-data.client.js';
 
 export async function buildApp(env: Env) {
   const redis = createRedisClient(env);
@@ -39,7 +40,13 @@ export async function buildApp(env: Env) {
     logger: {
       level: env.LOG_LEVEL,
       redact: {
-        paths: ['apiKey', 'api_key', 'authorization', 'headers.authorization'],
+        paths: [
+          'apiKey',
+          'api_key',
+          'authorization',
+          'headers.authorization',
+          'BRIGHT_DATA_API_TOKEN',
+        ],
         remove: true,
       },
       transport:
@@ -84,15 +91,24 @@ export async function buildApp(env: Env) {
   normalization.register(new AbhiBusAdapter());
   normalization.register(new MakeMyTripAdapter());
 
+  const brightDataFor = (sourceName: string) =>
+    new BrightDataClient({
+      apiToken: env.BRIGHT_DATA_API_TOKEN,
+      baseUrl: env.BRIGHT_DATA_BASE_URL,
+      pollIntervalMs: env.BRIGHT_DATA_POLL_INTERVAL_MS,
+      maxPollAttempts: env.BRIGHT_DATA_MAX_POLL_ATTEMPTS,
+      sourceName,
+    });
+
   const registry = new SourceRegistryService(redis, env);
   registry.registerClient(
-    new RedBusSourceClient(env.REDBUS_API_URL, env.REDBUS_API_KEY, env.DEFAULT_SOURCE_TIMEOUT_MS),
+    new RedBusSourceClient(brightDataFor('redbus'), env.REDBUS_COLLECTOR_ID),
   );
   registry.registerClient(
     new AbhiBusSourceClient(
-      env.ABHIBUS_API_URL,
-      env.ABHIBUS_API_KEY,
-      env.DEFAULT_SOURCE_TIMEOUT_MS,
+      brightDataFor('abhibus'),
+      env.ABHIBUS_COLLECTOR_ID,
+      env.ABHIBUS_RESULT_LIMIT,
     ),
   );
   registry.registerClient(

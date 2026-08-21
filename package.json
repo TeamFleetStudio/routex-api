@@ -9,7 +9,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/app/server.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "probe:brightdata": "tsx scripts/probe-bright-data.ts"
   },
   "engines": {
     "node": ">=20"
