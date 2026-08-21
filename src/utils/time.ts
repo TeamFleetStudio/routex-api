@@ -82,3 +82,40 @@ export function parsePriceInr(value: unknown): number | null {
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
 }
+
+/** Extract INR amount from Bright Data price objects or scalars. */
+export function extractPriceValue(value: unknown): number | null {
+  if (value && typeof value === 'object' && 'value' in value) {
+    return parsePriceInr((value as { value: unknown }).value);
+  }
+  return parsePriceInr(value);
+}
+
+/** Parse durations like "6h 50m", "06h.45m", "6h", "50m" into minutes. */
+export function parseDurationMinutes(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.round(value);
+  }
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const raw = value.trim().toLowerCase().replace(/\./g, ' ');
+  const hours = /(\d+)\s*h/.exec(raw);
+  const mins = /(\d+)\s*m/.exec(raw);
+  if (!hours && !mins) return null;
+  const h = hours ? Number(hours[1]) : 0;
+  const m = mins ? Number(mins[1]) : 0;
+  return h * 60 + m;
+}
+
+/** Parse "23 Seats" → 23; non-numeric availability text → null. */
+export function parseSeatsAvailable(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return null;
+  const match = /(\d+)/.exec(value);
+  return match ? Number(match[1]) : null;
+}
+
+export function cleanOperatorName(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return value.replace(/\nAD\s*$/i, '').trim() || null;
+}
+

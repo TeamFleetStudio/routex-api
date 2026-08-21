@@ -1,73 +1,95 @@
 import type { BusSearchRequest, NormalizedBusListing } from '../../../types/bus.types.js';
 import { emptyNormalizedListing } from '../../../types/bus.types.js';
 import type { SourceAdapter } from '../../contracts/source-adapter.interface.js';
-import { normalizeTimeTo24h, parsePriceInr } from '../../../utils/time.js';
+import {
+  cleanOperatorName,
+  extractPriceValue,
+  normalizeTimeTo24h,
+  parseDurationMinutes,
+} from '../../../utils/time.js';
 
-interface AbhiBusRawListing {
-  serviceId?: string;
-  deepLink?: string;
-  operator?: string;
-  serviceName?: string;
-  coachType?: string;
-  layout?: string;
-  departure?: string;
-  arrival?: string;
-  duration?: number;
-  price?: string | number;
-  mrp?: string | number;
-  savings?: string | number;
-  promo?: string;
-  availableSeats?: number;
-  seatStatus?: string;
-  avgRating?: number;
-  totalRatings?: number;
-  cancelPolicy?: string;
-  pickups?: Array<{ name?: string; time?: string }>;
-  dropoffs?: Array<{ name?: string; time?: string }>;
-  facilities?: string[];
+interface AbhiBusPrice {
+  value?: number;
+  currency?: string;
+  symbol?: string;
+}
+
+interface AbhiBusRecord {
+  source_site?: string;
+  operator_name?: string;
+  bus_type?: string;
+  departure_time?: string;
+  arrival_time?: string;
+  duration?: string;
+  amenities?: string | string[];
+  pricing?: AbhiBusPrice | number | string;
+  seats?: string;
+  rating?: number;
+  listing_url?: string;
+  product_page_url?: string;
 }
 
 interface AbhiBusPayload {
-  listings?: AbhiBusRawListing[];
+  records?: AbhiBusRecord[];
+  listings?: AbhiBusRecord[];
   mode?: string;
 }
 
-export class AbhiBusAdapter implements SourceAdapter<AbhiBusPayload> {
+function extractRecords(raw: unknown): AbhiBusRecord[] {
+  if (Array.isArray(raw)) return raw as AbhiBusRecord[];
+  if (raw && typeof raw === 'object') {
+    const obj = raw as AbhiBusPayload;
+    if (Array.isArray(obj.records)) return obj.records;
+    if (Array.isArray(obj.listings)) return obj.listings;
+  }
+  return [];
+}
+
+function extractServiceKey(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.searchParams.get('serviceKey');
+  } catch {
+    return null;
+  }
+}
+
+function mapAmenities(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((a): a is string => typeof a === 'string');
+  }
+  if (typeof value === 'string' && value.trim()) {
+    return [value.trim()];
+  }
+  return [];
+}
+
+export class AbhiBusAdapter implements SourceAdapter<unknown> {
   readonly sourceName = 'abhibus';
 
-  adapt(raw: AbhiBusPayload, search: BusSearchRequest): NormalizedBusListing[] {
-    const listings = Array.isArray(raw?.listings) ? raw.listings : [];
-    return listings.map((item) => {
+  adapt(raw: unknown, search: BusSearchRequest): NormalizedBusListing[] {
+    return extractRecords(raw).map((item) => {
       const base = emptyNormalizedListing(this.sourceName, search);
+      const listingUrl = item.listing_url ?? item.product_page_url ?? null;
+
       return {
         ...base,
-        source_listing_id: item.serviceId ?? null,
-        listing_url: item.deepLink ?? null,
-        operator_name: item.operator ?? null,
-        bus_name: item.serviceName ?? null,
-        bus_type: item.coachType ?? null,
-        seat_layout: item.layout ?? null,
-        departure_time: normalizeTimeTo24h(item.departure),
-        arrival_time: normalizeTimeTo24h(item.arrival),
-        duration_minutes: typeof item.duration === 'number' ? item.duration : null,
-        boarding_points: (item.pickups ?? []).map((p) => ({
-          name: p.name ?? null,
-          time: normalizeTimeTo24h(p.time),
-        })),
-        dropping_points: (item.dropoffs ?? []).map((p) => ({
-          name: p.name ?? null,
-          time: normalizeTimeTo24h(p.time),
-        })),
-        amenities: Array.isArray(item.facilities) ? item.facilities : [],
-        price_inr: parsePriceInr(item.price),
-        base_price_inr: parsePriceInr(item.mrp),
-        discount_inr: parsePriceInr(item.savings),
-        offer_text: item.promo ?? null,
-        seats_available: typeof item.availableSeats === 'number' ? item.availableSeats : null,
-        availability_text: item.seatStatus ?? null,
-        rating: typeof item.avgRating === 'number' ? item.avgRating : null,
-        rating_count: typeof item.totalRatings === 'number' ? item.totalRatings : null,
-        cancellation_policy: item.cancelPolicy ?? null,
+        source_listing_id: extractServiceKey(listingUrl ?? undefined),
+        listing_url: listingUrl,
+        operator_name: cleanOperatorName(item.operator_name),
+        bus_type: typeof item.bus_type === 'string' ? item.bus_type : null,
+        departure_time: normalizeTimeTo24h(item.departure_time),
+        arrival_time: normalizeTimeTo24h(item.arrival_time),
+        duration_minutes: parseDurationMinutes(item.duration),
+        amenities: mapAmenities(item.amenities),
+        price_inr: extractPriceValue(item.pricing),
+        base_price_inr: null,
+        discount_inr: null,
+        seats_available: null,
+        availability_text: typeof item.seats === 'string' ? item.seats : null,
+        rating: typeof item.rating === 'number' ? item.rating : null,
+        rating_count: null,
       };
     });
   }
