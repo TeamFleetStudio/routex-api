@@ -21,7 +21,12 @@ RouteX accepts an origin city, destination city, and travel date, then:
 7. Matches listings into canonical buses
 8. Returns `SUCCESS`, `PARTIAL_SUCCESS`, or `SEARCH_FAILED`
 
-External provider URLs are configured via environment variables. Placeholder clients work locally when URLs are empty (no invented production endpoints).
+External providers:
+
+- **RedBus / AbhiBus** — Bright Data Scraper Studio collectors (`POST /dca/trigger` → poll `GET /dca/dataset`)
+- **MakeMyTrip** — placeholder until a collector is configured
+
+Set `BRIGHT_DATA_API_TOKEN` in `.env` (never commit it). Probe collectors with `npm run probe:brightdata`.
 
 ---
 
@@ -93,10 +98,20 @@ On miss, acquire `routex:lock:search:...`. Losers wait briefly for cache populat
 ## External source architecture
 
 ```text
-External API → Source Client → Adapter → NormalizedBusListing[]
+Search request
+  → Build provider URL (city + date)
+  → Bright Data POST /dca/trigger
+  → Poll GET /dca/dataset until ready
+  → Source Adapter → NormalizedBusListing[]
 ```
 
-Configured sources (seeded into Redis if missing): `redbus`, `abhibus`, `makemytrip`. Secrets stay in env vars; Redis stores non-secret config (`base_url` as `ENV_REFERENCE:...`).
+| Source | Collector env | Notes |
+|--------|---------------|--------|
+| RedBus | `REDBUS_COLLECTOR_ID` | Needs known city IDs (Chennai/Bengaluru seeded) |
+| AbhiBus | `ABHIBUS_COLLECTOR_ID` | Uses display-name path + `limit` |
+| MakeMyTrip | — | Placeholder client |
+
+Configured sources are also seeded into Redis (`routex:sources:config`). Bright Data sources use a longer `timeout_ms` (~5 minutes) to cover polling.
 
 ---
 
@@ -139,11 +154,17 @@ Redis must be reachable via `REDIS_URL`. No Docker is required or provided.
 | `TRUST_PROXY` | `true` only behind trusted reverse proxies |
 | `RATE_LIMIT_MAX` | Max requests per window (default `100`) |
 | `RATE_LIMIT_WINDOW_MS` | Window size (default `60000`) |
-| `DEFAULT_SOURCE_TIMEOUT_MS` | Per-source timeout |
+| `DEFAULT_SOURCE_TIMEOUT_MS` | Placeholder / MMT timeout |
 | `DEFAULT_SOURCE_RETRY_COUNT` | Retries after first attempt |
-| `REDBUS_API_URL` / `REDBUS_API_KEY` | RedBus provider (optional) |
-| `ABHIBUS_API_URL` / `ABHIBUS_API_KEY` | AbhiBus provider (optional) |
-| `MMT_API_URL` / `MMT_API_KEY` | MakeMyTrip provider (optional) |
+| `BRIGHT_DATA_API_TOKEN` | Bright Data Bearer token (**required** for live RedBus/AbhiBus) |
+| `BRIGHT_DATA_BASE_URL` | Default `https://api.brightdata.com` |
+| `REDBUS_COLLECTOR_ID` | RedBus Scraper Studio collector |
+| `ABHIBUS_COLLECTOR_ID` | AbhiBus Scraper Studio collector |
+| `BRIGHT_DATA_POLL_INTERVAL_MS` | Poll interval (default `5000`) |
+| `BRIGHT_DATA_MAX_POLL_ATTEMPTS` | Max polls (default `60` ≈ 5 min) |
+| `BRIGHT_DATA_SOURCE_TIMEOUT_MS` | Outer source timeout (default `300000`) |
+| `ABHIBUS_RESULT_LIMIT` | AbhiBus collector `limit` (default `10`) |
+| `MMT_API_URL` / `MMT_API_KEY` | MakeMyTrip placeholder (optional) |
 | `SELF_HEALING_API_URL` / `SELF_HEALING_API_KEY` | Self-healing API (optional) |
 
 ---
@@ -200,7 +221,7 @@ Content-Type: application/json
 }
 ```
 
-With placeholder providers (empty API URLs), successful sources typically return empty `results` while still reporting `SUCCESS`.
+With Bright Data configured, RedBus/AbhiBus return normalized listings. MakeMyTrip remains a placeholder until wired.
 
 ---
 
