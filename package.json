@@ -1,0 +1,40 @@
+{
+  "name": "routex-api",
+  "version": "1.0.0",
+  "description": "RouteX API — multi-source bus search and comparison backend",
+  "type": "module",
+  "main": "dist/app/server.js",
+  "scripts": {
+    "dev": "tsx watch src/app/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/app/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "routex",
+    "bus",
+    "search",
+    "fastify",
+    "redis"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.1",
+    "ioredis": "^5.4.2",
+    "pino": "^9.6.0",
+    "undici": "^7.3.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "pino-pretty": "^13.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.2"
+  }
+}
