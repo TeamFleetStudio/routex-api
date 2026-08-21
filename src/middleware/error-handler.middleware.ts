@@ -4,7 +4,7 @@ import { AppError, RateLimitExceededError, ValidationError } from '../errors/ind
 import type { ApiErrorBody } from '../types/api.types.js';
 
 function requestIdOf(request: FastifyRequest): string {
-  return request.requestId ?? 'unknown';
+  return request.requestId ?? request.id ?? 'unknown';
 }
 
 export function toErrorBody(err: unknown, requestId: string): ApiErrorBody {
