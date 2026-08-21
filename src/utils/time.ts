@@ -41,7 +41,7 @@ export function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** Parse common time strings like "9:30 PM" or "21:30" into 24h HH:mm when safe. */
+/** Parse common time strings like "9:30 PM", "10.30 pm", or "21:30" into 24h HH:mm. */
 export function normalizeTimeTo24h(value: unknown): string | null {
   if (typeof value !== 'string' || !value.trim()) return null;
   const raw = value.trim();
@@ -55,21 +55,36 @@ export function normalizeTimeTo24h(value: unknown): string | null {
     }
   }
 
-  const ampm = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(raw);
-  if (ampm) {
-    let h = Number(ampm[1]);
-    const m = Number(ampm[2]);
-    const period = ampm[3].toUpperCase();
-    if (h < 1 || h > 12 || m < 0 || m > 59) return null;
-    if (period === 'AM') {
-      if (h === 12) h = 0;
-    } else if (h !== 12) {
-      h += 12;
-    }
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  const ampmColon = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(raw);
+  if (ampmColon) {
+    return to24h(Number(ampmColon[1]), Number(ampmColon[2]), ampmColon[3]);
+  }
+
+  const ampmDot = /^(\d{1,2})\.(\d{2})\s*(AM|PM)$/i.exec(raw);
+  if (ampmDot) {
+    return to24h(Number(ampmDot[1]), Number(ampmDot[2]), ampmDot[3]);
   }
 
   return null;
+}
+
+function to24h(h: number, m: number, period: string): string | null {
+  if (h < 1 || h > 12 || m < 0 || m > 59) return null;
+  let hour = h;
+  const p = period.toUpperCase();
+  if (p === 'AM') {
+    if (hour === 12) hour = 0;
+  } else if (hour !== 12) {
+    hour += 12;
+  }
+  return `${String(hour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+export function timeToMinutes(hhmm: string | null | undefined): number | null {
+  if (!hhmm) return null;
+  const match = /^(\d{2}):(\d{2})$/.exec(hhmm);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
 }
 
 export function parsePriceInr(value: unknown): number | null {
@@ -77,7 +92,8 @@ export function parsePriceInr(value: unknown): number | null {
     return value;
   }
   if (typeof value !== 'string') return null;
-  const cleaned = value.replace(/[^\d.]/g, '');
+  // Handles "₹1,250", "Starting from ₹999", "850.00"
+  const cleaned = value.replace(/,/g, '').replace(/[^\d.]/g, '');
   if (!cleaned) return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
@@ -91,15 +107,28 @@ export function extractPriceValue(value: unknown): number | null {
   return parsePriceInr(value);
 }
 
-/** Parse durations like "6h 50m", "06h.45m", "6h", "50m" into minutes. */
+/**
+ * Parse durations like "6h 50m", "06h.45m", "9 hours", "08:30" (as duration) into minutes.
+ */
 export function parseDurationMinutes(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return Math.round(value);
   }
   if (typeof value !== 'string' || !value.trim()) return null;
-  const raw = value.trim().toLowerCase().replace(/\./g, ' ');
-  const hours = /(\d+)\s*h/.exec(raw);
-  const mins = /(\d+)\s*m/.exec(raw);
+
+  const raw = value.trim().toLowerCase();
+
+  const asClock = /^(\d{1,2}):(\d{2})$/.exec(raw);
+  if (asClock) {
+    const h = Number(asClock[1]);
+    const m = Number(asClock[2]);
+    if (h >= 0 && m >= 0 && m <= 59) return h * 60 + m;
+  }
+
+  const hoursWord = /(\d+)\s*hours?/.exec(raw);
+  const normalized = raw.replace(/\./g, ' ');
+  const hours = /(\d+)\s*h/.exec(normalized) ?? hoursWord;
+  const mins = /(\d+)\s*m/.exec(normalized);
   if (!hours && !mins) return null;
   const h = hours ? Number(hours[1]) : 0;
   const m = mins ? Number(mins[1]) : 0;
@@ -118,4 +147,3 @@ export function cleanOperatorName(value: unknown): string | null {
   if (typeof value !== 'string' || !value.trim()) return null;
   return value.replace(/\nAD\s*$/i, '').trim() || null;
 }
-

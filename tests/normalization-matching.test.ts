@@ -58,7 +58,7 @@ describe('normalization', () => {
 });
 
 describe('matching architecture', () => {
-  it('groups similar listings into canonical buses', () => {
+  it('groups similar listings into canonical buses with savings', () => {
     const matching = new BusMatchingService(
       new DefaultMatchingStrategy(new MatchingScoreService()),
     );
@@ -69,6 +69,7 @@ describe('matching architecture', () => {
       departure_time: '23:00',
       arrival_time: '05:50',
       bus_type: 'AC Sleeper',
+      duration_minutes: 410,
       price_inr: 1224,
     };
     const b = {
@@ -77,6 +78,7 @@ describe('matching architecture', () => {
       departure_time: '23:00',
       arrival_time: '05:50',
       bus_type: 'AC Sleeper',
+      duration_minutes: 410,
       price_inr: 1100,
     };
     const c = {
@@ -85,13 +87,15 @@ describe('matching architecture', () => {
       departure_time: '21:00',
       arrival_time: '04:00',
       bus_type: 'Non-AC Seater',
+      duration_minutes: 420,
       price_inr: 800,
     };
 
     const results = matching.match([a, b, c]);
     expect(results).toHaveLength(2);
-    const vrl = results.find((r) => r.operator_name === 'VRL Travels');
+    const vrl = results.find((r) => (r.operator_name_normalized ?? '').includes('VRL'));
     expect(vrl?.offers).toHaveLength(2);
-    expect(vrl?.match_confidence).toBeGreaterThan(0.5);
+    expect(vrl?.cheapest_price_inr).toBe(1100);
+    expect(vrl?.match_confidence).toBeGreaterThanOrEqual(80);
   });
 });

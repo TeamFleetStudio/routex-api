@@ -117,7 +117,24 @@ Configured sources are also seeded into Redis (`routex:sources:config`). Bright 
 
 ## Normalization & matching
 
-Adapters map provider fields into the shared normalized model (unknown scalars → `null`, arrays → `[]`). Matching is pluggable via `MatchingStrategy`; the default clusters by operator + departure similarity into `CanonicalBus` with multi-source offers.
+Adapters map provider fields into the shared normalized model (unknown scalars → `null`, arrays → `[]`).
+
+Cross-site comparison then:
+
+1. Enrich operator names, bus-type tags (`AC`, `SLEEPER`, …), times, prices  
+2. Remove exact duplicates  
+3. Score similarity **0–100**:
+
+```text
+operator×0.35 + bus_type×0.25 + departure×0.20 + arrival×0.10 + duration×0.10
+```
+
+4. **≥ 80** → merge into one comparable bus group  
+5. **65–79** → link as `similar_alternatives`  
+6. Compute cheapest provider, savings ₹ / %, and **deal score**  
+7. Sort by deal score → price → duration → departure  
+
+Each result includes multi-source `offers[]` so users see the same (or similar) bus across RedBus, AbhiBus, etc. with price differences.
 
 ---
 
