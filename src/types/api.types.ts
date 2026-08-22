@@ -1,4 +1,4 @@
-import type { CanonicalBus } from './bus.types.js';
+import type { CanonicalBus, NormalizedBusListing } from './bus.types.js';
 import type { SourceResultMeta } from './source.types.js';
 
 export type SearchStatus = 'SUCCESS' | 'PARTIAL_SUCCESS' | 'SEARCH_FAILED';
@@ -22,7 +22,10 @@ export interface BusSearchResponse {
     stale: boolean;
   };
   sources: SourceResultMeta[];
-  results: CanonicalBus[];
+  /** Nested listing contract for FE */
+  results: NormalizedBusListing[];
+  /** Optional matched groups (internal / debug) */
+  matched?: CanonicalBus[];
 }
 
 export interface HealthResponse {

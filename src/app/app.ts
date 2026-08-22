@@ -7,6 +7,7 @@ import { errorHandler } from '../middleware/error-handler.middleware.js';
 import { createRateLimitPlugin } from '../middleware/rate-limit.middleware.js';
 import { createHealthRoutes } from '../routes/health.routes.js';
 import { createBusRoutes } from '../routes/bus.routes.js';
+import { createBrightDataRoutes } from '../routes/brightdata.routes.js';
 import { BusSearchController } from '../controllers/bus-search.controller.js';
 import { CacheService } from '../services/cache/cache.service.js';
 import { CachePolicyService } from '../services/cache/cache-policy.service.js';
@@ -25,6 +26,7 @@ import { BusMatchingService } from '../services/matching/bus-matching.service.js
 import { SearchOrchestratorService } from '../services/search/search-orchestrator.service.js';
 import { SearchService } from '../services/search/search.service.js';
 import { RedBusSourceClient } from '../sources/implementations/redbus/redbus.client.js';
+import { BrightDataRedBusClient } from '../sources/implementations/redbus/brightdata-redbus.client.js';
 import { RedBusAdapter } from '../sources/implementations/redbus/redbus.adapter.js';
 import { AbhiBusSourceClient } from '../sources/implementations/abhibus/abhibus.client.js';
 import { AbhiBusAdapter } from '../sources/implementations/abhibus/abhibus.adapter.js';
@@ -85,9 +87,16 @@ export async function buildApp(env: Env) {
   normalization.register(new MakeMyTripAdapter());
 
   const registry = new SourceRegistryService(redis, env);
-  registry.registerClient(
-    new RedBusSourceClient(env.REDBUS_API_URL, env.REDBUS_API_KEY, env.DEFAULT_SOURCE_TIMEOUT_MS),
-  );
+  const redBusClient =
+    env.BRIGHTDATA_API_KEY && env.COLLECTOR_REDBUS
+      ? new BrightDataRedBusClient({
+          apiKey: env.BRIGHTDATA_API_KEY,
+          collectorId: env.COLLECTOR_REDBUS,
+          timeoutMs: env.BRIGHTDATA_TIMEOUT_MS,
+          pollIntervalMs: env.BRIGHTDATA_POLL_INTERVAL_MS,
+        })
+      : new RedBusSourceClient(env.REDBUS_API_URL, env.REDBUS_API_KEY, env.DEFAULT_SOURCE_TIMEOUT_MS);
+  registry.registerClient(redBusClient);
   registry.registerClient(
     new AbhiBusSourceClient(
       env.ABHIBUS_API_URL,
@@ -117,6 +126,7 @@ export async function buildApp(env: Env) {
 
   await app.register(createHealthRoutes(redis));
   await app.register(createBusRoutes(controller));
+  await app.register(createBrightDataRoutes(env));
 
   return { app, redis, env };
 }

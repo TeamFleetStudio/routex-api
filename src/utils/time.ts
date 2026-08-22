@@ -82,3 +82,22 @@ export function parsePriceInr(value: unknown): number | null {
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
 }
+
+
+/** "HH:MM" or "H:MM" → minutes from midnight */
+export function parseTimeToMinutes(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const normalized = normalizeTimeTo24h(value) ?? value.trim();
+  const m = /^(\d{1,2}):(\d{2})$/.exec(normalized);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/** Absolute minute difference, wrapping across midnight (e.g. 23:50 vs 00:10 → 20). */
+export function minuteDiffAbs(a: number, b: number): number {
+  const raw = Math.abs(a - b);
+  return Math.min(raw, 1440 - raw);
+}

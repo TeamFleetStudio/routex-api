@@ -5,6 +5,7 @@ import type { SourceRegistryService } from '../sources/source-registry.service.j
 import type { SourceExecutorService } from '../sources/source-executor.service.js';
 import type { BusMatchingService } from '../matching/bus-matching.service.js';
 import { logger } from '../../utils/logger.js';
+import { filterByPreferredTime } from '../../utils/preferred-time-filter.js';
 
 export class SearchOrchestratorService {
   constructor(
@@ -22,13 +23,19 @@ export class SearchOrchestratorService {
       from_city: request.from_city,
       to_city: request.to_city,
       travel_date: request.travel_date,
+      preferred_time: request.preferred_time,
     });
 
     const sources = await this.registry.getEnabledSources();
     const executed = await this.executor.executeAll(sources, request);
     const sourceMeta = executed.map((e) => e.meta);
-    const listings = executed.flatMap((e) => e.listings);
-    const results = this.matching.match(listings);
+    const listings = filterByPreferredTime(
+      executed.flatMap((e) => e.listings),
+      request.preferred_time,
+    );
+    const matched = this.matching.match(listings);
+    // FE contract: nested listing objects (dedupe via match groups → primary listing each)
+    const results = matched.map((group) => group.listings[0]);
 
     const successes = sourceMeta.filter((s) => s.status === 'SUCCESS').length;
     const total = sourceMeta.length;
@@ -51,6 +58,7 @@ export class SearchOrchestratorService {
       search_id: searchId,
       sources: sourceMeta,
       results,
+      matched,
     };
   }
 }

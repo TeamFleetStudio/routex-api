@@ -38,7 +38,7 @@ describe('partial success and total failure', async () => {
               ...emptyNormalizedListing('redbus', search),
               operator_name: 'VRL',
               departure_time: '22:00',
-              price_inr: 1000,
+              pricing: { price_inr: 1000, base_price_inr: null, discount_inr: null, offer_text: null }, availability: { seats_available: null, availability_text: null },
             },
           ],
         },

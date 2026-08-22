@@ -57,7 +57,7 @@ export class DefaultMatchingStrategy implements MatchingStrategy {
       match_confidence: Number(confidence.toFixed(2)),
       offers: group.map((g) => ({
         source: g.source_site,
-        price_inr: g.price_inr,
+        price_inr: g.pricing.price_inr,
         source_listing_id: g.source_listing_id,
         listing_url: g.listing_url,
       })),

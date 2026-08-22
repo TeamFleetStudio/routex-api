@@ -20,19 +20,20 @@ export class SourceRegistryService {
     const existing = await this.redis.get(SOURCES_CONFIG_KEY);
     if (existing) return;
 
+    const bdRedbus = Boolean(this.env.BRIGHTDATA_API_KEY && this.env.COLLECTOR_REDBUS);
     const defaults: SourceConfig[] = [
       {
         name: 'redbus',
         enabled: true,
-        base_url: 'ENV_REFERENCE:REDBUS_API_URL',
-        timeout_ms: this.env.DEFAULT_SOURCE_TIMEOUT_MS,
-        retry_count: this.env.DEFAULT_SOURCE_RETRY_COUNT,
+        base_url: bdRedbus ? 'ENV_REFERENCE:BRIGHTDATA' : 'ENV_REFERENCE:REDBUS_API_URL',
+        timeout_ms: bdRedbus ? this.env.BRIGHTDATA_TIMEOUT_MS : this.env.DEFAULT_SOURCE_TIMEOUT_MS,
+        retry_count: bdRedbus ? 0 : this.env.DEFAULT_SOURCE_RETRY_COUNT,
         priority: 1,
-        self_healing_enabled: true,
+        self_healing_enabled: !bdRedbus,
       },
       {
         name: 'abhibus',
-        enabled: true,
+        enabled: !bdRedbus,
         base_url: 'ENV_REFERENCE:ABHIBUS_API_URL',
         timeout_ms: this.env.DEFAULT_SOURCE_TIMEOUT_MS,
         retry_count: this.env.DEFAULT_SOURCE_RETRY_COUNT,
@@ -41,7 +42,7 @@ export class SourceRegistryService {
       },
       {
         name: 'makemytrip',
-        enabled: true,
+        enabled: !bdRedbus,
         base_url: 'ENV_REFERENCE:MMT_API_URL',
         timeout_ms: this.env.DEFAULT_SOURCE_TIMEOUT_MS,
         retry_count: this.env.DEFAULT_SOURCE_RETRY_COUNT,

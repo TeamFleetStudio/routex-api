@@ -31,9 +31,39 @@ describe('normalization', () => {
 
     expect(listing.operator_name).toBe('VRL');
     expect(listing.departure_time).toBe('21:30');
-    expect(listing.price_inr).toBe(1224);
+    expect(listing.pricing.price_inr).toBe(1224);
     expect(listing.bus_name).toBeNull();
     expect(listing.amenities).toEqual([]);
+  });
+
+  it('rewrites listing_url onto the correct search route + busId', () => {
+    const adapter = new RedBusAdapter();
+    const [listing] = adapter.adapt(
+      {
+        search_url:
+          'https://www.redbus.in/bus-tickets/madurai-to-chennai?onward=22-Aug-2026&doj=22-Aug-2026',
+        listings: [
+          {
+            listing_url: '46383458',
+            product_page_url:
+              'https://www.redbus.in/bus-tickets/chennai-to-bangalore?fromCityId=126&fromCityName=Madurai&toCityId=123&toCityName=Chennai&onward=22-Aug-2026&doj=22-Aug-2026&busId=19659509',
+            travels: 'zingbus plus',
+            fare: 395,
+          },
+        ],
+      },
+      {
+        from_city: 'Madurai',
+        to_city: 'Chennai',
+        travel_date: '2026-08-22',
+      },
+    );
+
+    expect(listing.source_listing_id).toBe('19659509');
+    expect(listing.listing_url).toContain('/bus-tickets/madurai-to-chennai?');
+    expect(listing.listing_url).toContain('busId=19659509');
+    expect(listing.listing_url).toContain('fromCityName=Madurai');
+    expect(listing.listing_url).not.toContain('chennai-to-bangalore');
   });
 
   it('uses registered adapters via NormalizationService', () => {
@@ -46,7 +76,7 @@ describe('normalization', () => {
     );
     expect(listings).toHaveLength(1);
     expect(listings[0].operator_name).toBe('SRS');
-    expect(listings[0].price_inr).toBe(999);
+    expect(listings[0].pricing.price_inr).toBe(999);
   });
 });
 
@@ -62,7 +92,7 @@ describe('matching architecture', () => {
       departure_time: '23:00',
       arrival_time: '05:50',
       bus_type: 'AC Sleeper',
-      price_inr: 1224,
+      pricing: { price_inr: 1224, base_price_inr: null, discount_inr: null, offer_text: null },
     };
     const b = {
       ...emptyNormalizedListing('abhibus', search),
@@ -70,7 +100,7 @@ describe('matching architecture', () => {
       departure_time: '23:00',
       arrival_time: '05:50',
       bus_type: 'AC Sleeper',
-      price_inr: 1100,
+      pricing: { price_inr: 1100, base_price_inr: null, discount_inr: null, offer_text: null },
     };
     const c = {
       ...emptyNormalizedListing('makemytrip', search),
@@ -78,7 +108,7 @@ describe('matching architecture', () => {
       departure_time: '21:00',
       arrival_time: '04:00',
       bus_type: 'Non-AC Seater',
-      price_inr: 800,
+      pricing: { price_inr: 800, base_price_inr: null, discount_inr: null, offer_text: null },
     };
 
     const results = matching.match([a, b, c]);
