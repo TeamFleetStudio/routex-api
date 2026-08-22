@@ -10,6 +10,7 @@
     "start": "node dist/app/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:healing": "tsx scripts/test-healing.ts",
     "probe:brightdata": "tsx scripts/probe-bright-data.ts"
   },
   "engines": {

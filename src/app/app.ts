@@ -24,13 +24,9 @@ import { DefaultMatchingStrategy } from '../services/matching/default-matching.s
 import { BusMatchingService } from '../services/matching/bus-matching.service.js';
 import { SearchOrchestratorService } from '../services/search/search-orchestrator.service.js';
 import { SearchService } from '../services/search/search.service.js';
-import { RedBusSourceClient } from '../sources/implementations/redbus/redbus.client.js';
-import { RedBusAdapter } from '../sources/implementations/redbus/redbus.adapter.js';
-import { AbhiBusSourceClient } from '../sources/implementations/abhibus/abhibus.client.js';
-import { AbhiBusAdapter } from '../sources/implementations/abhibus/abhibus.adapter.js';
-import { MMTSourceClient } from '../sources/implementations/makemytrip/makemytrip.client.js';
-import { MakeMyTripAdapter } from '../sources/implementations/makemytrip/makemytrip.adapter.js';
 import { BrightDataClient } from '../sources/implementations/brightdata/bright-data.client.js';
+import { BrightDataSourceClient } from '../sources/implementations/brightdata/bright-data-source.client.js';
+import { UnifiedScraperAdapter } from '../sources/implementations/scraper/unified-scraper.adapter.js';
 
 export async function buildApp(env: Env) {
   const redis = createRedisClient(env);
@@ -87,9 +83,9 @@ export async function buildApp(env: Env) {
   const selfHealing = new SelfHealingService(env, locks, health);
 
   const normalization = new NormalizationService();
-  normalization.register(new RedBusAdapter());
-  normalization.register(new AbhiBusAdapter());
-  normalization.register(new MakeMyTripAdapter());
+  for (const site of ['redbus', 'abhibus'] as const) {
+    normalization.register(UnifiedScraperAdapter.forSite(site));
+  }
 
   const brightDataFor = (sourceName: string) =>
     new BrightDataClient({
@@ -100,19 +96,23 @@ export async function buildApp(env: Env) {
       sourceName,
     });
 
+  const scraperLimit = env.SCRAPER_DEFAULT_LIMIT;
   const registry = new SourceRegistryService(redis, env);
   registry.registerClient(
-    new RedBusSourceClient(brightDataFor('redbus'), env.REDBUS_COLLECTOR_ID),
+    new BrightDataSourceClient(
+      'redbus',
+      brightDataFor('redbus'),
+      env.REDBUS_COLLECTOR_ID,
+      scraperLimit,
+    ),
   );
   registry.registerClient(
-    new AbhiBusSourceClient(
+    new BrightDataSourceClient(
+      'abhibus',
       brightDataFor('abhibus'),
       env.ABHIBUS_COLLECTOR_ID,
       env.ABHIBUS_RESULT_LIMIT,
     ),
-  );
-  registry.registerClient(
-    new MMTSourceClient(env.MMT_API_URL, env.MMT_API_KEY, env.DEFAULT_SOURCE_TIMEOUT_MS),
   );
   await registry.seedDefaultsIfMissing();
 

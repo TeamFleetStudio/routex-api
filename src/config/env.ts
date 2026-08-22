@@ -1,5 +1,6 @@
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
+import { loadBrightDataApiTokenFromCli } from './bright-data-credentials.js';
 
 loadDotenv();
 
@@ -22,21 +23,18 @@ const envSchema = z.object({
   LOCK_WAIT_MS: z.coerce.number().int().positive().default(2_000),
   LOCK_POLL_MS: z.coerce.number().int().positive().default(100),
   STALE_MULTIPLIER: z.coerce.number().positive().default(3),
-  REDBUS_API_URL: z.string().optional().default(''),
-  REDBUS_API_KEY: z.string().optional().default(''),
-  ABHIBUS_API_URL: z.string().optional().default(''),
-  ABHIBUS_API_KEY: z.string().optional().default(''),
-  MMT_API_URL: z.string().optional().default(''),
-  MMT_API_KEY: z.string().optional().default(''),
-  SELF_HEALING_API_URL: z.string().optional().default(''),
-  SELF_HEALING_API_KEY: z.string().optional().default(''),
   BRIGHT_DATA_API_TOKEN: z.string().optional().default(''),
+  BRIGHTDATA_API_KEY: z.string().optional().default(''),
   BRIGHT_DATA_BASE_URL: z.string().default('https://api.brightdata.com'),
-  REDBUS_COLLECTOR_ID: z.string().default('c_mt2zg2lg2mzr0gwzzr'),
-  ABHIBUS_COLLECTOR_ID: z.string().default('c_mt3098pc2d2if01a7g'),
+  REDBUS_COLLECTOR_ID: z.string().default('c_mt45kbsacfoxm1vlm'),
+  ABHIBUS_COLLECTOR_ID: z.string().default('c_mt494k6m154fl23cty'),
+  BRIGHTDATA_CLI_BIN: z.string().default('bdata'),
+  SELF_HEALING_CLI_TIMEOUT_SEC: z.coerce.number().int().positive().default(1800),
+  SELF_HEALING_OUTPUT_DIR: z.string().default('output'),
   BRIGHT_DATA_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
   BRIGHT_DATA_MAX_POLL_ATTEMPTS: z.coerce.number().int().positive().default(60),
   BRIGHT_DATA_SOURCE_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
+  SCRAPER_DEFAULT_LIMIT: z.coerce.number().int().positive().default(10),
   ABHIBUS_RESULT_LIMIT: z.coerce.number().int().positive().default(10),
 });
 
@@ -45,7 +43,19 @@ export type Env = z.infer<typeof envSchema>;
 let cachedEnv: Env | null = null;
 
 export function loadEnv(overrides?: Record<string, string | undefined>): Env {
-  const parsed = envSchema.safeParse({ ...process.env, ...overrides });
+  const merged = { ...process.env, ...overrides };
+  // Accept BRIGHTDATA_API_KEY as alias for BRIGHT_DATA_API_TOKEN
+  if (!merged.BRIGHT_DATA_API_TOKEN && merged.BRIGHTDATA_API_KEY) {
+    merged.BRIGHT_DATA_API_TOKEN = merged.BRIGHTDATA_API_KEY;
+  }
+  // Fall back to Bright Data CLI credentials (~/.config or %APPDATA%/brightdata-cli)
+  if (!merged.BRIGHT_DATA_API_TOKEN) {
+    const fromCli = loadBrightDataApiTokenFromCli();
+    if (fromCli) {
+      merged.BRIGHT_DATA_API_TOKEN = fromCli;
+    }
+  }
+  const parsed = envSchema.safeParse(merged);
   if (!parsed.success) {
     const details = parsed.error.issues
       .map((i) => `${i.path.join('.')}: ${i.message}`)

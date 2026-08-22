@@ -1,18 +1,13 @@
-/** Canonical city aliases used when building provider URLs. */
-const CITY_ALIASES: Record<string, string> = {
-  bengaluru: 'Bangalore',
-  bangalore: 'Bangalore',
-  chennai: 'Chennai',
-  madras: 'Chennai',
-};
-
-/** RedBus city IDs for known routes (expand as needed). */
-const REDBUS_CITY_IDS: Record<string, number> = {
-  chennai: 123,
-  madras: 123,
-  bangalore: 122,
-  bengaluru: 122,
-};
+import type { BusSearchRequest } from '../../../types/bus.types.js';
+import {
+  findCity,
+  normalizeCityKey,
+  resolveCityDisplayName,
+  resolveRedBusCityId,
+  resolveAbhiBusCityId,
+  slugifyCity,
+  type BusSite,
+} from './city-registry.js';
 
 const MONTHS = [
   'Jan',
@@ -29,20 +24,6 @@ const MONTHS = [
   'Dec',
 ] as const;
 
-function normalizeKey(city: string): string {
-  return city.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-export function resolveCityDisplayName(city: string): string {
-  const key = normalizeKey(city);
-  return CITY_ALIASES[key] ?? city.trim().replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-export function resolveRedBusCityId(city: string): number | null {
-  const key = normalizeKey(city);
-  return REDBUS_CITY_IDS[key] ?? null;
-}
-
 /** Format YYYY-MM-DD → 25-Aug-2026 */
 export function formatRedBusDate(travelDate: string): string {
   const [y, m, d] = travelDate.split('-').map(Number);
@@ -51,36 +32,61 @@ export function formatRedBusDate(travelDate: string): string {
   return `${day}-${month}-${y}`;
 }
 
-export function slugifyCityForPath(city: string): string {
-  return resolveCityDisplayName(city)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
+/** Format YYYY-MM-DD → 25-08-2026 for AbhiBus bus_search URLs */
+export function formatAbhiBusDate(travelDate: string): string {
+  const [y, m, d] = travelDate.split('-');
+  return `${d}-${m}-${y}`;
 }
 
-export function buildAbhiBusSearchUrl(fromCity: string, toCity: string): string {
-  const from = resolveCityDisplayName(fromCity);
-  const to = resolveCityDisplayName(toCity);
-  return `https://www.abhibus.com/buses/2/${encodeURIComponent(from)}-${encodeURIComponent(to)}`;
+export function slugifyCityForPath(city: string): string {
+  return slugifyCity(city);
+}
+
+export { resolveCityDisplayName, resolveRedBusCityId, resolveAbhiBusCityId, findCity, normalizeCityKey };
+
+export function buildAbhiBusSearchUrl(
+  fromCity: string,
+  toCity: string,
+  travelDate?: string,
+): string {
+  const fromDef = findCity(fromCity);
+  const toDef = findCity(toCity);
+  const fromName = resolveCityDisplayName(fromCity);
+  const toName = resolveCityDisplayName(toCity);
+
+  if (
+    travelDate &&
+    fromDef?.abhibusId != null &&
+    toDef?.abhibusId != null
+  ) {
+    return `https://www.abhibus.com/bus_search/${encodeURIComponent(fromName)}/${fromDef.abhibusId}/${encodeURIComponent(toName)}/${toDef.abhibusId}/${formatAbhiBusDate(travelDate)}/O`;
+  }
+
+  return `https://www.abhibus.com/buses/2/${encodeURIComponent(fromName)}-${encodeURIComponent(toName)}`;
 }
 
 export function buildRedBusSearchUrl(
   fromCity: string,
   toCity: string,
   travelDate: string,
-): string | null {
-  const fromId = resolveRedBusCityId(fromCity);
-  const toId = resolveRedBusCityId(toCity);
-  if (fromId === null || toId === null) {
-    return null;
-  }
-
+): string {
   const fromName = resolveCityDisplayName(fromCity);
   const toName = resolveCityDisplayName(toCity);
   const fromSlug = slugifyCityForPath(fromCity);
   const toSlug = slugifyCityForPath(toCity);
   const doj = formatRedBusDate(travelDate);
+
+  const fromId = resolveRedBusCityId(fromCity);
+  const toId = resolveRedBusCityId(toCity);
+
+  if (fromId === null || toId === null) {
+    const params = new URLSearchParams({
+      onward: doj,
+      doj,
+      ref: 'search',
+    });
+    return `https://www.redbus.in/bus-tickets/${fromSlug}-to-${toSlug}?${params.toString()}`;
+  }
 
   const params = new URLSearchParams({
     fromCityId: String(fromId),
@@ -93,4 +99,18 @@ export function buildRedBusSearchUrl(
   });
 
   return `https://www.redbus.in/bus-tickets/${fromSlug}-to-${toSlug}?${params.toString()}`;
+}
+
+export function buildSourceSearchUrl(
+  site: BusSite,
+  search: BusSearchRequest,
+): string {
+  const date = search.travel_date;
+
+  switch (site) {
+    case 'redbus':
+      return buildRedBusSearchUrl(search.from_city, search.to_city, date);
+    case 'abhibus':
+      return buildAbhiBusSearchUrl(search.from_city, search.to_city, date);
+  }
 }

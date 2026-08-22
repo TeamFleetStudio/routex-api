@@ -2,6 +2,10 @@ export interface BusSearchRequest {
   from_city: string;
   to_city: string;
   travel_date: string;
+  /** Depart-at-or-after filter (HH:MM). Empty string = no filter. */
+  depart_after?: string;
+  /** Max listings per source (overrides env default when set). */
+  limit?: number;
 }
 
 export interface BoardingPoint {

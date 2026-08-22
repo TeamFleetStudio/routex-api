@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RedBusAdapter } from '../src/sources/implementations/redbus/redbus.adapter.js';
-import { AbhiBusAdapter } from '../src/sources/implementations/abhibus/abhibus.adapter.js';
+import { UnifiedScraperAdapter } from '../src/sources/implementations/scraper/unified-scraper.adapter.js';
 import { NormalizationService } from '../src/services/normalization/normalization.service.js';
 import { MatchingScoreService } from '../src/services/matching/matching-score.service.js';
 import { DefaultMatchingStrategy } from '../src/services/matching/default-matching.strategy.js';
@@ -15,7 +14,7 @@ const search = {
 
 describe('normalization', () => {
   it('maps redbus Bright Data fields without inventing data', () => {
-    const adapter = new RedBusAdapter();
+    const adapter = UnifiedScraperAdapter.forSite('redbus');
     const [listing] = adapter.adapt(
       {
         records: [
@@ -38,7 +37,7 @@ describe('normalization', () => {
 
   it('uses registered adapters via NormalizationService', () => {
     const service = new NormalizationService();
-    service.register(new AbhiBusAdapter());
+    service.register(UnifiedScraperAdapter.forSite('abhibus'));
     const listings = service.normalize(
       'abhibus',
       {
@@ -82,7 +81,7 @@ describe('matching architecture', () => {
       price_inr: 1100,
     };
     const c = {
-      ...emptyNormalizedListing('makemytrip', search),
+      ...emptyNormalizedListing('abhibus', search),
       operator_name: 'Orange Tours',
       departure_time: '21:00',
       arrival_time: '04:00',

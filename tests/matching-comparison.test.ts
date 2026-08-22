@@ -130,7 +130,7 @@ describe('cross-site grouping and savings', () => {
         rating: 4.4,
       },
       {
-        ...emptyNormalizedListing('makemytrip', search),
+        ...emptyNormalizedListing('abhibus', search),
         operator_name: 'Different Operator XYZ',
         bus_type: 'Non-AC Seater',
         departure_time: '09:00',

@@ -65,4 +65,5 @@ export interface SourceResultMeta {
   failure_kind?: FailureKind;
   message?: string;
   duration_ms: number;
+  healing_attempted?: boolean;
 }

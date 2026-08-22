@@ -1,15 +1,40 @@
 import { z } from 'zod';
 import { isPastDate, parseDateOnly } from '../utils/time.js';
 
-export const busSearchBodySchema = z
-  .object({
-    from_city: z.string().trim().min(1, 'from_city is required'),
-    to_city: z.string().trim().min(1, 'to_city is required'),
-    travel_date: z
-      .string()
-      .trim()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'travel_date must be YYYY-MM-DD'),
-  })
+const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+const rawBusSearchBodySchema = z.object({
+  from_city: z.string().trim().min(1, 'from_city is required'),
+  to_city: z.string().trim().min(1, 'to_city is required'),
+  travel_date: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'travel_date must be YYYY-MM-DD'),
+  depart_after: z
+    .string()
+    .trim()
+    .optional()
+    .refine((v) => v === undefined || v === '' || timePattern.test(v), {
+      message: 'depart_after must be HH:MM or empty',
+    }),
+  time: z
+    .string()
+    .trim()
+    .optional()
+    .refine((v) => v === undefined || v === '' || timePattern.test(v), {
+      message: 'time must be HH:MM or empty',
+    }),
+  limit: z.coerce.number().int().positive().max(50).optional(),
+});
+
+export const busSearchBodySchema = rawBusSearchBodySchema
+  .transform((data) => ({
+    from_city: data.from_city,
+    to_city: data.to_city,
+    travel_date: data.travel_date,
+    depart_after: (data.depart_after ?? data.time ?? '').trim(),
+    limit: data.limit,
+  }))
   .superRefine((data, ctx) => {
     if (data.from_city.toLowerCase() === data.to_city.toLowerCase()) {
       ctx.addIssue({

@@ -11,11 +11,11 @@ import {
 describe('failure classification', () => {
   const classifier = new FailureClassifierService();
 
-  it('classifies timeouts as retryable', () => {
+  it('classifies timeouts as retryable and healable', () => {
     const result = classifier.classify(new SourceTimeoutError('redbus'));
     expect(result.kind).toBe('TIMEOUT');
     expect(result.retryable).toBe(true);
-    expect(result.mayTriggerSelfHealing).toBe(false);
+    expect(result.mayTriggerSelfHealing).toBe(true);
   });
 
   it('classifies rate limits as retryable', () => {

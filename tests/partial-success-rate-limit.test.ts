@@ -26,7 +26,6 @@ describe('partial success and total failure', async () => {
       getEnabledSources: vi.fn().mockResolvedValue([
         { config: { name: 'redbus' }, client: {} },
         { config: { name: 'abhibus' }, client: {} },
-        { config: { name: 'makemytrip' }, client: {} },
       ]),
     };
     const executor = {
@@ -43,12 +42,8 @@ describe('partial success and total failure', async () => {
           ],
         },
         {
-          meta: { source: 'abhibus', status: 'SUCCESS', duration_ms: 12 },
-          listings: [],
-        },
-        {
           meta: {
-            source: 'makemytrip',
+            source: 'abhibus',
             status: 'TIMEOUT',
             failure_kind: 'TIMEOUT',
             duration_ms: 10000,
@@ -67,7 +62,7 @@ describe('partial success and total failure', async () => {
     const result = await orchestrator.search(search, 'req_test');
     expect(result.status).toBe('PARTIAL_SUCCESS');
     expect(result.success).toBe(true);
-    expect(result.sources).toHaveLength(3);
+    expect(result.sources).toHaveLength(2);
   });
 
   it('returns SEARCH_FAILED when all providers fail', async () => {

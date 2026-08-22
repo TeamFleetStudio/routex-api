@@ -6,9 +6,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { loadEnv } from '../src/config/env.js';
 import { BrightDataClient } from '../src/sources/implementations/brightdata/bright-data.client.js';
 import {
-  buildAbhiBusSearchUrl,
-  buildRedBusSearchUrl,
-} from '../src/sources/implementations/brightdata/url-builders.js';
+  buildBrightDataInputs,
+} from '../src/sources/implementations/brightdata/bright-data-input.builder.js';
 
 async function probeOne(
   name: string,
@@ -37,12 +36,17 @@ async function main(): Promise<void> {
   const to = 'Bengaluru';
   const date = '2026-08-25';
 
-  const redbusUrl = buildRedBusSearchUrl(from, to, date);
-  if (!redbusUrl) throw new Error('Failed to build RedBus URL');
-  const abhiUrl = buildAbhiBusSearchUrl(from, to);
+  const search = {
+    from_city: from,
+    to_city: to,
+    travel_date: date,
+  };
 
-  console.log('RedBus URL:', redbusUrl);
-  console.log('AbhiBus URL:', abhiUrl);
+  const redbusInputs = buildBrightDataInputs('redbus', search, env.SCRAPER_DEFAULT_LIMIT);
+  const abhiInputs = buildBrightDataInputs('abhibus', search, env.ABHIBUS_RESULT_LIMIT);
+
+  console.log('RedBus inputs:', redbusInputs);
+  console.log('AbhiBus inputs:', abhiInputs);
 
   const redbusClient = new BrightDataClient({
     apiToken: env.BRIGHT_DATA_API_TOKEN,
@@ -61,10 +65,8 @@ async function main(): Promise<void> {
   });
 
   // Run sequentially to avoid slamming the API
-  await probeOne('redbus', redbusClient, env.REDBUS_COLLECTOR_ID, [{ url: redbusUrl }]);
-  await probeOne('abhibus', abhiClient, env.ABHIBUS_COLLECTOR_ID, [
-    { url: abhiUrl, limit: env.ABHIBUS_RESULT_LIMIT },
-  ]);
+  await probeOne('redbus', redbusClient, env.REDBUS_COLLECTOR_ID, redbusInputs);
+  await probeOne('abhibus', abhiClient, env.ABHIBUS_COLLECTOR_ID, abhiInputs);
 }
 
 main().catch((err) => {

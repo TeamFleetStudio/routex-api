@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { RedBusAdapter } from '../src/sources/implementations/redbus/redbus.adapter.js';
-import { AbhiBusAdapter } from '../src/sources/implementations/abhibus/abhibus.adapter.js';
+import { UnifiedScraperAdapter } from '../src/sources/implementations/scraper/unified-scraper.adapter.js';
 import {
   buildAbhiBusSearchUrl,
   buildRedBusSearchUrl,
@@ -27,13 +26,21 @@ describe('Bright Data URL builders', () => {
     expect(formatRedBusDate('2026-08-25')).toBe('25-Aug-2026');
   });
 
-  it('returns null for unknown RedBus cities', () => {
-    expect(buildRedBusSearchUrl('Atlantis', 'Chennai', '2026-08-25')).toBeNull();
+  it('returns slug URL for unknown RedBus cities', () => {
+    const url = buildRedBusSearchUrl('Chennai', 'Theni', '2026-08-25');
+    expect(url).toContain('chennai-to-theni');
+    expect(url).toContain('onward=25-Aug-2026');
   });
 
-  it('builds AbhiBus URL with display names', () => {
+  it('builds AbhiBus URL with display names when date omitted', () => {
     expect(buildAbhiBusSearchUrl('Chennai', 'Bengaluru')).toBe(
       'https://www.abhibus.com/buses/2/Chennai-Bangalore',
+    );
+  });
+
+  it('builds AbhiBus bus_search URL with IDs when date is provided', () => {
+    expect(buildAbhiBusSearchUrl('Chennai', 'Bengaluru', '2026-08-25')).toContain(
+      '/bus_search/Chennai/6/Bangalore/7/25-08-2026/O',
     );
   });
 });
@@ -43,7 +50,7 @@ describe('Bright Data adapters', () => {
     const fixture = JSON.parse(
       readFileSync(join(__dirname, 'fixtures/redbus-bright-data.sample.json'), 'utf8'),
     );
-    const [listing] = new RedBusAdapter().adapt({ records: fixture }, search);
+    const [listing] = UnifiedScraperAdapter.forSite('redbus').adapt({ records: fixture }, search);
 
     expect(listing.source_site).toBe('redbus');
     expect(listing.source_listing_id).toBe('28692711');
@@ -62,7 +69,7 @@ describe('Bright Data adapters', () => {
     const fixture = JSON.parse(
       readFileSync(join(__dirname, 'fixtures/abhibus-bright-data.sample.json'), 'utf8'),
     );
-    const [listing] = new AbhiBusAdapter().adapt({ records: fixture }, search);
+    const [listing] = UnifiedScraperAdapter.forSite('abhibus').adapt({ records: fixture }, search);
 
     expect(listing.source_site).toBe('abhibus');
     expect(listing.source_listing_id).toBe('4496365225');

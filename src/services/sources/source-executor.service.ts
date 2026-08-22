@@ -110,8 +110,15 @@ export class SourceExecutorService {
       await this.circuitBreaker.recordFailure(source);
       await this.health.recordFailure(source, classified.kind);
 
-      if (classified.mayTriggerSelfHealing && config.self_healing_enabled) {
-        const healed = await this.selfHealing.tryHeal(source);
+      let healingAttempted = false;
+
+      if (config.self_healing_enabled && this.selfHealing.shouldAttemptHeal(classified.kind)) {
+        healingAttempted = true;
+        const healed = await this.selfHealing.tryHeal(source, {
+          search,
+          failure_kind: classified.kind,
+          message: classified.message,
+        });
         if (healed) {
           try {
             const raw = await this.withTimeout(
@@ -122,16 +129,30 @@ export class SourceExecutorService {
             const listings = this.normalization.normalize(source, raw.payload, search);
             await this.circuitBreaker.recordSuccess(source);
             await this.health.recordSuccess(source);
+            logger.info({
+              event: 'SOURCE_SUCCESS',
+              source,
+              duration_ms: Date.now() - started,
+              count: listings.length,
+              after_healing: true,
+            });
             return {
               meta: {
                 source,
                 status: 'SUCCESS',
                 duration_ms: Date.now() - started,
+                healing_attempted: true,
               },
               listings,
             };
-          } catch {
-            // fall through to failure
+          } catch (retryErr) {
+            logger.warn({
+              event: 'SOURCE_FAILED',
+              source,
+              failure_kind: classified.kind,
+              phase: 'post_healing_retry',
+              message: retryErr instanceof Error ? retryErr.message : 'unknown',
+            });
           }
         }
       }
@@ -142,6 +163,7 @@ export class SourceExecutorService {
         source,
         failure_kind: classified.kind,
         duration_ms: Date.now() - started,
+        healing_attempted: healingAttempted,
       });
 
       return {
@@ -151,6 +173,7 @@ export class SourceExecutorService {
           failure_kind: classified.kind,
           message: classified.message,
           duration_ms: Date.now() - started,
+          healing_attempted: healingAttempted,
         },
         listings: [],
       };

@@ -182,6 +182,23 @@ export class BrightDataClient {
         return parsed;
       }
 
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        'data' in parsed &&
+        Array.isArray((parsed as { data: unknown }).data)
+      ) {
+        const data = (parsed as { data: unknown[] }).data;
+        logger.info({
+          event: 'SOURCE_SUCCESS',
+          source: this.sourceName,
+          collection_id: collectionId,
+          phase: 'bright_data_ready',
+          count: data.length,
+        });
+        return data;
+      }
+
       throw new ExternalApiError(
         this.sourceName,
         'Bright Data dataset returned unexpected shape',

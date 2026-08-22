@@ -46,4 +46,19 @@ describe('bus search validation', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('accepts optional depart_after, time alias, and limit', () => {
+    const result = busSearchBodySchema.safeParse({
+      from_city: 'Chennai',
+      to_city: 'Bengaluru',
+      travel_date: '2099-08-25',
+      time: '18:00',
+      limit: 5,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.depart_after).toBe('18:00');
+      expect(result.data.limit).toBe(5);
+    }
+  });
 });

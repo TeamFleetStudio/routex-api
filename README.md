@@ -21,12 +21,44 @@ RouteX accepts an origin city, destination city, and travel date, then:
 7. Matches listings into canonical buses
 8. Returns `SUCCESS`, `PARTIAL_SUCCESS`, or `SEARCH_FAILED`
 
-External providers:
+External providers (Bright Data Scraper Studio collectors only):
 
-- **RedBus / AbhiBus** — Bright Data Scraper Studio collectors (`POST /dca/trigger` → poll `GET /dca/dataset`)
-- **MakeMyTrip** — placeholder until a collector is configured
+| Source | `source_site` | Env collector ID | Default collector |
+|--------|---------------|------------------|-------------------|
+| RedBus | `redbus` | `REDBUS_COLLECTOR_ID` | `c_mt45kbsacfoxm1vlm` |
+| AbhiBus | `abhibus` | `ABHIBUS_COLLECTOR_ID` | `c_mt494k6m154fl23cty` |
 
-Set `BRIGHT_DATA_API_TOKEN` in `.env` (never commit it). Probe collectors with `npm run probe:brightdata`.
+Flow: build studio payload → `POST /dca/trigger` → poll `GET /dca/dataset` → unified scraper adapter → normalization → matching.
+
+Set `BRIGHT_DATA_API_TOKEN` in `.env`, or leave it empty to auto-load from the Bright Data CLI credentials file:
+
+- Windows: `%APPDATA%\brightdata-cli\credentials.json`
+- Linux/macOS: `~/.config/brightdata-cli/credentials.json`
+
+Override the path with `BRIGHTDATA_CLI_CREDENTIALS_PATH` if needed. Probe collectors with `npm run probe:brightdata`.
+
+---
+
+## Bright Data collector input
+
+Both collectors receive the same studio payload shape:
+
+```json
+{
+  "site": "redbus",
+  "url": "https://www.redbus.in/bus-tickets/...",
+  "from": "Chennai",
+  "from_city": "Chennai",
+  "to": "Bengaluru",
+  "to_city": "Bengaluru",
+  "date": "2026-08-25",
+  "time": "18:00",
+  "limit": 10,
+  "enrich": "true"
+}
+```
+
+RedBus includes `enrich: "true"`. AbhiBus omits it. The search API accepts optional `depart_after` / `time` (HH:MM) and `limit`.
 
 ---
 
@@ -43,7 +75,7 @@ Set `BRIGHT_DATA_API_TOKEN` in `.env` (never commit it). Probe collectors with `
 - Provider adapters + normalization
 - Failure classification, retries, circuit breaker
 - Source health tracking
-- Self-healing API integration (optional)
+- Bright Data CLI self-healing on source failure
 - Pluggable bus matching architecture
 - Structured Pino logging
 - Vitest unit tests
@@ -65,7 +97,7 @@ Client
        └─ MISS / EXPIRED  → lock → orchestrator → sources → normalize → match → cache → respond
 ```
 
-SOLID-oriented services keep orchestration independent of provider specifics. New sources implement `BusSourceClient` + `SourceAdapter` and register in the composition root (`src/app/app.ts`).
+SOLID-oriented services keep orchestration independent of provider specifics. Sources implement `BusSourceClient` + `UnifiedScraperAdapter` and register in the composition root (`src/app/app.ts`).
 
 ---
 
@@ -99,19 +131,18 @@ On miss, acquire `routex:lock:search:...`. Losers wait briefly for cache populat
 
 ```text
 Search request
-  → Build provider URL (city + date)
+  → Build studio payload (site, url, from, to, date, time, limit)
   → Bright Data POST /dca/trigger
   → Poll GET /dca/dataset until ready
-  → Source Adapter → NormalizedBusListing[]
+  → UnifiedScraperAdapter → NormalizedBusListing[]
 ```
 
 | Source | Collector env | Notes |
 |--------|---------------|--------|
-| RedBus | `REDBUS_COLLECTOR_ID` | Needs known city IDs (Chennai/Bengaluru seeded) |
-| AbhiBus | `ABHIBUS_COLLECTOR_ID` | Uses display-name path + `limit` |
-| MakeMyTrip | — | Placeholder client |
+| RedBus | `REDBUS_COLLECTOR_ID` | City IDs from registry; sends `enrich: true` |
+| AbhiBus | `ABHIBUS_COLLECTOR_ID` | ID-based `/bus_search/...` URLs when date known |
 
-Configured sources are also seeded into Redis (`routex:sources:config`). Bright Data sources use a longer `timeout_ms` (~5 minutes) to cover polling.
+Configured sources are seeded into Redis (`routex:sources:config`). Both use a longer `timeout_ms` (~5 minutes) to cover polling.
 
 ---
 
@@ -134,13 +165,27 @@ operator×0.35 + bus_type×0.25 + departure×0.20 + arrival×0.10 + duration×0.
 6. Compute cheapest provider, savings ₹ / %, and **deal score**  
 7. Sort by deal score → price → duration → departure  
 
-Each result includes multi-source `offers[]` so users see the same (or similar) bus across RedBus, AbhiBus, etc. with price differences.
+Each result includes multi-source `offers[]` so users see the same (or similar) bus across RedBus and AbhiBus with price differences.
 
 ---
 
 ## Failure handling & self-healing
 
-Failures are classified (`TIMEOUT`, `RATE_LIMITED`, `NETWORK_ERROR`, …). Retryable errors use exponential backoff with jitter. Circuit breakers skip unhealthy sources. Structural / extraction failures may call the optional self-healing API (single Redis lock per source), then retry once.
+Failures are classified (`TIMEOUT`, `RATE_LIMITED`, `NETWORK_ERROR`, …). Retryable errors use exponential backoff with jitter. Circuit breakers skip unhealthy sources.
+
+On any source failure (timeout, invalid response, server error, network, etc.), self-healing runs once per source (Redis lock), then the source is retried once.
+
+Heal backend: **Bright Data CLI**
+
+```bash
+bdata scraper heal <collector_id> "<what to fix>" \
+  --url "<search page url>" \
+  --auto-approve --auto-save \
+  --timeout 1800 \
+  --pretty -o output/<source>-heal.json
+```
+
+Configure via `BRIGHTDATA_CLI_BIN`, `SELF_HEALING_CLI_TIMEOUT_SEC`, and `SELF_HEALING_OUTPUT_DIR`.
 
 ---
 
@@ -171,18 +216,19 @@ Redis must be reachable via `REDIS_URL`. No Docker is required or provided.
 | `TRUST_PROXY` | `true` only behind trusted reverse proxies |
 | `RATE_LIMIT_MAX` | Max requests per window (default `100`) |
 | `RATE_LIMIT_WINDOW_MS` | Window size (default `60000`) |
-| `DEFAULT_SOURCE_TIMEOUT_MS` | Placeholder / MMT timeout |
 | `DEFAULT_SOURCE_RETRY_COUNT` | Retries after first attempt |
-| `BRIGHT_DATA_API_TOKEN` | Bright Data Bearer token (**required** for live RedBus/AbhiBus) |
+| `BRIGHT_DATA_API_TOKEN` | Bright Data Bearer token (**required** for live searches) |
 | `BRIGHT_DATA_BASE_URL` | Default `https://api.brightdata.com` |
 | `REDBUS_COLLECTOR_ID` | RedBus Scraper Studio collector |
 | `ABHIBUS_COLLECTOR_ID` | AbhiBus Scraper Studio collector |
 | `BRIGHT_DATA_POLL_INTERVAL_MS` | Poll interval (default `5000`) |
 | `BRIGHT_DATA_MAX_POLL_ATTEMPTS` | Max polls (default `60` ≈ 5 min) |
 | `BRIGHT_DATA_SOURCE_TIMEOUT_MS` | Outer source timeout (default `300000`) |
-| `ABHIBUS_RESULT_LIMIT` | AbhiBus collector `limit` (default `10`) |
-| `MMT_API_URL` / `MMT_API_KEY` | MakeMyTrip placeholder (optional) |
-| `SELF_HEALING_API_URL` / `SELF_HEALING_API_KEY` | Self-healing API (optional) |
+| `SCRAPER_DEFAULT_LIMIT` | Default RedBus collector `limit` (default `10`) |
+| `ABHIBUS_RESULT_LIMIT` | Default AbhiBus collector `limit` (default `10`) |
+| `BRIGHTDATA_CLI_BIN` | Bright Data CLI binary (default `bdata`) |
+| `SELF_HEALING_CLI_TIMEOUT_SEC` | CLI heal timeout (default `1800`) |
+| `SELF_HEALING_OUTPUT_DIR` | Heal output directory (default `output`) |
 
 ---
 
@@ -203,9 +249,13 @@ Content-Type: application/json
 {
   "from_city": "Chennai",
   "to_city": "Bengaluru",
-  "travel_date": "2026-08-25"
+  "travel_date": "2026-08-25",
+  "depart_after": "18:00",
+  "limit": 5
 }
 ```
+
+Optional fields: `time` (alias for `depart_after`), `limit` (max listings per source).
 
 ### Example response
 
@@ -218,30 +268,26 @@ Content-Type: application/json
   "cache": { "hit": false, "stale": false },
   "sources": [
     { "source": "redbus", "status": "SUCCESS", "duration_ms": 120 },
-    { "source": "abhibus", "status": "SUCCESS", "duration_ms": 98 },
-    { "source": "makemytrip", "status": "TIMEOUT", "failure_kind": "TIMEOUT", "duration_ms": 10000 }
+    { "source": "abhibus", "status": "TIMEOUT", "failure_kind": "TIMEOUT", "duration_ms": 10000 }
   ],
   "results": [
     {
-      "canonical_bus_id": "bus_abc123",
+      "canonical_bus_id": "...",
       "operator_name": "VRL Travels",
-      "departure_time": "23:00",
-      "arrival_time": "05:50",
-      "bus_type": "AC Sleeper",
-      "match_confidence": 0.94,
       "offers": [
-        { "source": "redbus", "price_inr": 1224 },
-        { "source": "abhibus", "price_inr": 1100 }
+        { "source": "redbus", "price_inr": 990 },
+        { "source": "abhibus", "price_inr": 950 }
       ]
     }
   ]
 }
 ```
 
-With Bright Data configured, RedBus/AbhiBus return normalized listings. MakeMyTrip remains a placeholder until wired.
-
 ---
 
-## Project structure
+## Scripts
 
-See `src/` for app, config, routes, controllers, services, sources, middleware, schemas, errors, types, and utils. Tests live under `tests/`.
+| Command | Description |
+|---------|-------------|
+| `npm run probe:brightdata` | Trigger redbus + abhibus collectors and save raw JSON to `tmp/` |
+| `npm run test:healing -- redbus` | Smoke-test Bright Data CLI heal for a source |

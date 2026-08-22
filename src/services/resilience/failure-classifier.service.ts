@@ -20,7 +20,7 @@ export class FailureClassifierService {
       return {
         kind: 'TIMEOUT',
         retryable: true,
-        mayTriggerSelfHealing: false,
+        mayTriggerSelfHealing: true,
         message: error.message,
       };
     }
@@ -57,7 +57,7 @@ export class FailureClassifierService {
         return {
           kind: 'SERVER_ERROR',
           retryable: true,
-          mayTriggerSelfHealing: false,
+          mayTriggerSelfHealing: true,
           message: error.message,
         };
       }
@@ -72,7 +72,7 @@ export class FailureClassifierService {
       return {
         kind: 'INVALID_RESPONSE',
         retryable: false,
-        mayTriggerSelfHealing: false,
+        mayTriggerSelfHealing: true,
         message: error.message,
       };
     }
@@ -83,7 +83,7 @@ export class FailureClassifierService {
         return {
           kind: 'TIMEOUT',
           retryable: true,
-          mayTriggerSelfHealing: false,
+          mayTriggerSelfHealing: true,
           message: error.message,
         };
       }
@@ -96,7 +96,7 @@ export class FailureClassifierService {
         return {
           kind: 'NETWORK_ERROR',
           retryable: true,
-          mayTriggerSelfHealing: false,
+          mayTriggerSelfHealing: true,
           message: error.message,
         };
       }
@@ -113,7 +113,7 @@ export class FailureClassifierService {
     return {
       kind: 'UNKNOWN',
       retryable: false,
-      mayTriggerSelfHealing: false,
+      mayTriggerSelfHealing: true,
       message: error instanceof Error ? error.message : 'Unknown error',
     };
   }
