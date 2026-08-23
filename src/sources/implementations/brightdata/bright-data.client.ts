@@ -75,6 +75,15 @@ export class BrightDataClient {
     }
     if (res.statusCode >= 400) {
       const detail = summarizeBrightDataError(text);
+      logger.warn({
+        event: 'BRIGHT_DATA_TRIGGER_FAILED',
+        source: this.sourceName,
+        collector: collectorId,
+        status_code: res.statusCode,
+        override_incompatible_schema: true,
+        url,
+        detail: detail ?? text.slice(0, 300),
+      });
       throw new ExternalApiError(
         this.sourceName,
         detail

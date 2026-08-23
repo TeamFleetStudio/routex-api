@@ -69,10 +69,13 @@ export class SearchService {
           });
         }
 
-        // Finished but incomplete — keep session results; retry missing via site cache / live.
+        // Finished but incomplete — retry failed providers. Do NOT echo stale
+        // FAILED/422 from production (shared Redis) — mark them processing.
         if (hasFailedProviders(session)) {
+          const retrying = markFailedProvidersProcessing(session);
+          await this.sessionService.saveSession(retrying);
           this.triggerSessionResume(existingSearchId, request, requestId);
-          return this.responseFromSession(session, requestId, options?.includeAll, {
+          return this.responseFromSession(retrying, requestId, options?.includeAll, {
             hit: true,
             stale: true,
           });
@@ -367,6 +370,28 @@ function hasFailedProviders(session: SearchSession): boolean {
   return session.sources.some(
     (s) => s.status === 'FAILED' || s.status === 'SKIPPED' || s.status === 'TIMEOUT',
   );
+}
+
+/** While resume runs, hide stale FAILED/422 so clients don't think the search is done. */
+function markFailedProvidersProcessing(session: SearchSession): SearchSession {
+  const retrying = new Set(
+    session.sources
+      .filter((s) => s.status === 'FAILED' || s.status === 'SKIPPED' || s.status === 'TIMEOUT')
+      .map((s) => s.source),
+  );
+
+  const cleanedSources = session.sources.filter((s) => s.status === 'SUCCESS');
+  const progress = { ...(session.provider_progress ?? {}) };
+  for (const name of retrying) {
+    progress[name] = { status: 'processing' };
+  }
+
+  return {
+    ...session,
+    status: 'PARTIAL_SUCCESS',
+    sources: cleanedSources,
+    provider_progress: progress,
+  };
 }
 
 /**
