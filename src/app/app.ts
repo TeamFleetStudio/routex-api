@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import cors from '@fastify/cors';
 import Fastify from 'fastify';
 import type { Env } from '../config/env.js';
 import { createRedisClient, connectRedis } from '../config/redis.js';
@@ -66,6 +67,11 @@ export async function buildApp(env: Env) {
   });
 
   app.setErrorHandler(errorHandler);
+  await app.register(cors, {
+    origin: env.CORS_ORIGINS,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'x-request-id'],
+  });
   await app.register(requestContextPlugin);
   await app.register(createRateLimitPlugin({ redis, env }));
 
