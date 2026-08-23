@@ -23,7 +23,7 @@ This guide covers production deployment using the included **Dockerfile**.
 | `REDIS_URL` | yes | `redis://default:password@host:6379` |
 | `BRIGHT_DATA_API_TOKEN` | yes | your token |
 | `TRUST_PROXY` | yes (behind EasyPanel) | `true` |
-| `CORS_ORIGINS` | yes (browser frontend) | `https://routex.fsgarage.in` |
+| `CORS_ORIGINS` | yes (browser frontend) | `https://routex.fsgarage.in,http://localhost:5173` |
 | `REDBUS_COLLECTOR_ID` | yes | `c_mt5kcpdj13nspwzrzd` |
 | `MAKEMYTRIP_COLLECTOR_ID` | yes | `c_mt5m1h3uvef2inukz` |
 | `CLEARTrip_COLLECTOR_ID` | yes | `c_mt5mys6i27rezbm6py` |

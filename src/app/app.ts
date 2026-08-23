@@ -67,11 +67,27 @@ export async function buildApp(env: Env) {
   });
 
   app.setErrorHandler(errorHandler);
+
+  const allowedOrigins = new Set(env.CORS_ORIGINS);
   await app.register(cors, {
-    origin: env.CORS_ORIGINS,
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'x-request-id'],
+    origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void): void => {
+      // Non-browser clients (curl, server-to-server) send no Origin
+      if (!origin) {
+        cb(null, true);
+        return;
+      }
+      const normalized = origin.replace(/\/$/, '');
+      cb(null, allowedOrigins.has(normalized));
+    },
+    methods: ['GET', 'HEAD', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Accept', 'x-request-id', 'Authorization'],
+    exposedHeaders: ['x-request-id'],
+    credentials: true,
+    maxAge: 86_400,
+    preflight: true,
+    strictPreflight: false,
   });
+
   await app.register(requestContextPlugin);
   await app.register(createRateLimitPlugin({ redis, env }));
 

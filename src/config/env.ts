@@ -13,14 +13,14 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true' || v === '1'),
-  /** Comma-separated allowed browser origins for CORS (e.g. https://routex.fsgarage.in) */
+  /** Comma-separated allowed browser origins for CORS (no trailing slash) */
   CORS_ORIGINS: z
     .string()
-    .default('https://routex.fsgarage.in')
+    .default('https://routex.fsgarage.in,http://localhost:5173,http://localhost:3000')
     .transform((v) =>
       v
         .split(',')
-        .map((s) => s.trim())
+        .map((s) => s.trim().replace(/\/$/, ''))
         .filter(Boolean),
     ),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
