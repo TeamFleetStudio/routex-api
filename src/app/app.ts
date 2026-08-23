@@ -35,6 +35,7 @@ import { ProviderAnalyticsService } from '../services/analytics/provider-analyti
 import { BrightDataClient } from '../sources/implementations/brightdata/bright-data.client.js';
 import { BrightDataSourceClient } from '../sources/implementations/brightdata/bright-data-source.client.js';
 import { UnifiedScraperAdapter } from '../sources/implementations/scraper/unified-scraper.adapter.js';
+import { getPinoTransport } from '../utils/pino-transport.js';
 
 export async function buildApp(env: Env) {
   const redis = createRedisClient(env);
@@ -53,10 +54,7 @@ export async function buildApp(env: Env) {
         ],
         remove: true,
       },
-      transport:
-        env.NODE_ENV === 'development'
-          ? { target: 'pino-pretty', options: { colorize: true, translateTime: 'SYS:standard' } }
-          : undefined,
+      transport: getPinoTransport(),
     },
     trustProxy: env.TRUST_PROXY,
     requestIdHeader: 'x-request-id',
