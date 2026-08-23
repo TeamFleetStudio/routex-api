@@ -257,8 +257,8 @@ function resolveDiscount(
   const explicit = extractPriceValue(
     item.discount_inr ?? item.discountAmount ?? pricing?.discount_inr,
   );
-  if (explicit !== null) return explicit;
-  if (price !== null && basePrice !== null && basePrice >= price) {
+  if (explicit !== null && explicit > 0) return explicit;
+  if (price !== null && basePrice !== null && basePrice > price) {
     return basePrice - price;
   }
   return null;

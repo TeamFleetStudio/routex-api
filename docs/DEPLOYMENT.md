@@ -89,7 +89,8 @@ See [BACKEND.md](./BACKEND.md) for full endpoint reference, data models, and fro
 | Symptom | Fix |
 |---------|-----|
 | Container exits on start | Check `REDIS_URL` connectivity from container network |
-| `502 SEARCH_FAILED` | Verify `BRIGHT_DATA_API_TOKEN` and collector IDs |
+| `502` gateway (HTML) | Proxy timeout — ensure `POST_FIRST_RESULT_WAIT_MS` ≤ 8000 and redeploy |
+| `SEARCH_FAILED` in JSON | Verify `BRIGHT_DATA_API_TOKEN` and collector IDs |
 | `429` errors | Lower traffic or raise `RATE_LIMIT_MAX` |
 | Stale results | Normal — SWR returns cached data; background refresh runs |
 | Health check fails | Wait 15s start period; ensure port 3000 exposed |

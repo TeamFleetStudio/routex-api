@@ -22,7 +22,8 @@ export class BusSearchController {
       includeAll: parsed.data.include_all,
       waitAll,
     });
-    const statusCode = result.status === 'SEARCH_FAILED' ? 502 : 200;
-    await reply.status(statusCode).send(result);
+    // Always 200 — failure is in body (`status` / `success`). HTTP 502 here was
+    // confused with EasyPanel/Traefik gateway timeouts on long progressive scrapes.
+    await reply.status(200).send(result);
   }
 }

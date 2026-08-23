@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import type { BusSearchRequest } from '../../types/bus.types.js';
+import type { BusSearchRequest, NormalizedBusListing } from '../../types/bus.types.js';
 import type { BusSearchResponse, SearchStatus } from '../../types/api.types.js';
 import type {
   ProviderProgressEntry,
   SearchSession,
 } from '../../types/search-session.types.js';
+import type { SourceResultMeta } from '../../types/source.types.js';
 import type { SourceRegistryService } from '../sources/source-registry.service.js';
 import type { SourceExecutorService, SourceExecutionResult } from '../sources/source-executor.service.js';
 import type { BusMatchingService } from '../matching/bus-matching.service.js';
@@ -12,6 +13,7 @@ import type { SearchSessionService } from '../cache/search-session.service.js';
 import type { SearchEventsService } from './search-events.service.js';
 import { isSearchUpdating } from './search-progress.util.js';
 import { paginateResults } from '../../utils/pagination.js';
+import { sleep } from '../../utils/time.js';
 import { logger } from '../../utils/logger.js';
 
 export interface OrchestratorSearchOptions {
@@ -27,6 +29,8 @@ export class SearchOrchestratorService {
     private readonly matching: BusMatchingService,
     private readonly sessionService: SearchSessionService,
     private readonly searchEvents?: SearchEventsService,
+    /** Soft wait for first provider on POST (ms). 0 = return immediately. */
+    private readonly firstResultWaitMs = 8_000,
   ) {}
 
   async search(
@@ -46,8 +50,10 @@ export class SearchOrchestratorService {
 
     const sources = await this.registry.getEnabledSources();
     const sourceNames = sources.map((s) => s.config.name);
-    const timestamps = this.sessionService.buildSessionTimestamps();
     const now = new Date().toISOString();
+
+    // Progressive sessions are not "fresh overall cache" until all succeed.
+    const timestamps = this.sessionService.buildSessionTimestamps({ fresh: false });
 
     const initialSession: SearchSession = {
       search_id: searchId,
@@ -62,6 +68,7 @@ export class SearchOrchestratorService {
       updated_at: now,
       ...timestamps,
     };
+    // Persist before any scrape so concurrent POSTs / polls can find search_id.
     await this.sessionService.saveSession(initialSession);
 
     const accumulated: SourceExecutionResult[] = [];
@@ -76,13 +83,7 @@ export class SearchOrchestratorService {
       request,
       async (result) => {
         accumulated.push(result);
-        await this.persistPartialSession(
-          searchId,
-          request,
-          sourceNames,
-          accumulated,
-          timestamps,
-        );
+        await this.persistPartialSession(searchId, request, sourceNames, accumulated);
 
         const session = await this.sessionService.getSession(searchId);
         const totalBuses = session.session?.total_buses ?? 0;
@@ -108,7 +109,10 @@ export class SearchOrchestratorService {
         }
 
         if (completed >= sourceNames.length) {
-          const status = this.deriveStatus(accumulated.map((e) => e.meta));
+          const status = this.deriveStatus(
+            accumulated.map((e) => e.meta),
+            sourceNames.length,
+          );
           this.logSearchCompletion(status, requestId, searchId);
           this.searchEvents?.emitSearchFinished(searchId, { status });
         }
@@ -123,8 +127,24 @@ export class SearchOrchestratorService {
     if (options?.waitAll) {
       await progressWork;
     } else {
-      await firstProviderGate;
-      void progressWork;
+      // Soft deadline: return before reverse-proxy timeouts (EasyPanel ~30–60s).
+      // Cache hits often finish within waitMs; live scrapes continue in background.
+      const waitMs = this.firstResultWaitMs;
+      if (waitMs <= 0) {
+        void progressWork;
+      } else {
+        await Promise.race([firstProviderGate, sleep(waitMs)]);
+        void progressWork;
+        if (!firstProviderDone) {
+          logger.info({
+            event: 'SEARCH_POST_SOFT_RETURN',
+            search_id: searchId,
+            request_id: requestId,
+            waited_ms: waitMs,
+            reason: 'first_provider_still_running',
+          });
+        }
+      }
     }
 
     const { session } = await this.sessionService.getSession(searchId);
@@ -147,32 +167,131 @@ export class SearchOrchestratorService {
     return this.buildAndPersistResponse(searchId, request, requestId, executed, false);
   }
 
+  /**
+   * Keep progressed results; re-run only failed/skipped/missing providers.
+   * Successful providers stay as-is (their site/provider cache is used on live miss).
+   */
+  async resumeIncompleteSession(
+    searchId: string,
+    request: BusSearchRequest,
+    requestId: string,
+  ): Promise<BusSearchResponse | null> {
+    const { session } = await this.sessionService.getSession(searchId);
+    if (!session) return null;
+    if (isSearchUpdating(session)) {
+      return this.responseFromSession(session, requestId);
+    }
+
+    const enabled = await this.registry.getEnabledSources();
+    const sourceNames = enabled.map((s) => s.config.name);
+    const successSources = new Set(
+      session.sources.filter((s) => s.status === 'SUCCESS').map((s) => s.source),
+    );
+
+    const toRetry = enabled.filter((s) => !successSources.has(s.config.name));
+    if (toRetry.length === 0) {
+      return this.responseFromSession(session, requestId);
+    }
+
+    logger.info({
+      event: 'SESSION_RESUME_STARTED',
+      search_id: searchId,
+      request_id: requestId,
+      retry_providers: toRetry.map((s) => s.config.name),
+    });
+
+    // Mark retrying providers as processing so repeat API calls see updating_more_results.
+    const progress = {
+      ...(session.provider_progress ?? this.buildInitialProgress(sourceNames)),
+    };
+    for (const s of toRetry) {
+      progress[s.config.name] = { status: 'processing' };
+    }
+    await this.sessionService.saveSession({
+      ...session,
+      status: 'PARTIAL_SUCCESS',
+      provider_progress: progress,
+      updated_at: new Date().toISOString(),
+      ...this.sessionService.buildSessionTimestamps({ fresh: false }),
+    });
+
+    const keptMeta = session.sources.filter((s) => s.status === 'SUCCESS');
+    const keptListings = listingsFromSession(session).filter((l) =>
+      successSources.has(l.source_site),
+    );
+
+    const retried = await this.executor.executeAll(toRetry, request, { forceLive: true });
+    const mergedMeta: SourceResultMeta[] = [...keptMeta, ...retried.map((r) => r.meta)];
+    const mergedListings: NormalizedBusListing[] = [
+      ...keptListings,
+      ...retried.flatMap((r) => r.listings),
+    ];
+    const results = this.matching.match(mergedListings);
+    const status = this.deriveStatus(mergedMeta, sourceNames.length);
+    const now = new Date().toISOString();
+
+    const next: SearchSession = {
+      search_id: searchId,
+      request,
+      status,
+      sources: orderSources(sourceNames, mergedMeta),
+      results,
+      total_buses: results.length,
+      total_providers: sourceNames.length,
+      provider_progress: this.buildProviderProgress(
+        sourceNames,
+        [
+          ...keptMeta.map((meta) => ({
+            meta,
+            listings: keptListings.filter((l) => l.source_site === meta.source),
+          })),
+          ...retried,
+        ],
+      ),
+      created_at: session.created_at,
+      updated_at: now,
+      ...this.sessionService.buildSessionTimestamps({ fresh: status === 'SUCCESS' }),
+    };
+
+    await this.sessionService.saveSession(next);
+    this.logSearchCompletion(status, requestId, searchId);
+    this.searchEvents?.emitSearchFinished(searchId, { status });
+    this.searchEvents?.emitSessionUpdated(searchId, {
+      total_buses: next.total_buses,
+      progress_percent: 100,
+    });
+
+    return this.responseFromSession(next, requestId);
+  }
+
   private async persistPartialSession(
     searchId: string,
     request: BusSearchRequest,
     sourceNames: string[],
     accumulated: SourceExecutionResult[],
-    timestamps: Pick<SearchSession, 'fresh_until' | 'stale_until'>,
   ): Promise<void> {
     const existing = await this.sessionService.getSession(searchId);
     const sourceMeta = accumulated.map((e) => e.meta);
     const listings = accumulated.flatMap((e) => e.listings);
     const results = this.matching.match(listings);
-    const status = this.deriveStatus(sourceMeta);
+    const status = this.deriveStatus(sourceMeta, sourceNames.length);
     const now = new Date().toISOString();
+    const complete = accumulated.length >= sourceNames.length;
 
     const session: SearchSession = {
       search_id: searchId,
       request,
       status,
-      sources: sourceMeta,
+      sources: orderSources(sourceNames, sourceMeta),
       results,
       total_buses: results.length,
       total_providers: sourceNames.length,
       provider_progress: this.buildProviderProgress(sourceNames, accumulated),
       created_at: existing.session?.created_at ?? now,
       updated_at: now,
-      ...timestamps,
+      ...this.sessionService.buildSessionTimestamps({
+        fresh: complete && status === 'SUCCESS',
+      }),
     };
 
     await this.sessionService.saveSession(session);
@@ -188,25 +307,25 @@ export class SearchOrchestratorService {
     const sourceMeta = executed.map((e) => e.meta);
     const listings = executed.flatMap((e) => e.listings);
     const results = this.matching.match(listings);
-    const status = this.deriveStatus(sourceMeta);
+    const sourceNames = (await this.registry.getEnabledSources()).map((s) => s.config.name);
+    const status = this.deriveStatus(sourceMeta, sourceNames.length);
     this.logSearchCompletion(status, requestId, searchId);
 
     const now = new Date().toISOString();
-    const timestamps = this.sessionService.buildSessionTimestamps();
-    const sourceNames = sourceMeta.map((s) => s.source);
+    const existing = await this.sessionService.getSession(searchId);
 
     const session: SearchSession = {
       search_id: searchId,
       request,
       status,
-      sources: sourceMeta,
+      sources: orderSources(sourceNames, sourceMeta),
       results,
       total_buses: results.length,
       total_providers: sourceNames.length,
       provider_progress: this.buildProviderProgress(sourceNames, executed),
-      created_at: now,
+      created_at: existing.session?.created_at ?? now,
       updated_at: now,
-      ...timestamps,
+      ...this.sessionService.buildSessionTimestamps({ fresh: status === 'SUCCESS' }),
     };
 
     await this.sessionService.saveSession(session);
@@ -266,11 +385,15 @@ export class SearchOrchestratorService {
     return progress;
   }
 
-  private deriveStatus(sourceMeta: SourceExecutionResult['meta'][]): SearchStatus {
+  private deriveStatus(
+    sourceMeta: SourceResultMeta[],
+    totalProviders: number,
+  ): SearchStatus {
     const successes = sourceMeta.filter((s) => s.status === 'SUCCESS').length;
-    const total = sourceMeta.length;
-    if (total === 0 || successes === 0) return 'SEARCH_FAILED';
-    if (successes < total) return 'PARTIAL_SUCCESS';
+    // Providers still outstanding — keep progressive status.
+    if (sourceMeta.length < totalProviders) return 'PARTIAL_SUCCESS';
+    if (totalProviders === 0 || successes === 0) return 'SEARCH_FAILED';
+    if (successes < totalProviders) return 'PARTIAL_SUCCESS';
     return 'SUCCESS';
   }
 
@@ -283,4 +406,21 @@ export class SearchOrchestratorService {
       logger.info({ event: 'SEARCH_COMPLETED', request_id: requestId, search_id: searchId });
     }
   }
+}
+
+function listingsFromSession(session: SearchSession): NormalizedBusListing[] {
+  return session.results.flatMap((bus) => bus.listings ?? []);
+}
+
+function orderSources(sourceNames: string[], metas: SourceResultMeta[]): SourceResultMeta[] {
+  const byName = new Map(metas.map((m) => [m.source, m]));
+  const ordered: SourceResultMeta[] = [];
+  for (const name of sourceNames) {
+    const meta = byName.get(name);
+    if (meta) ordered.push(meta);
+  }
+  for (const meta of metas) {
+    if (!sourceNames.includes(meta.source)) ordered.push(meta);
+  }
+  return ordered;
 }

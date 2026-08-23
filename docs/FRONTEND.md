@@ -111,11 +111,18 @@ Content-Type: application/json
 | Field | What to do |
 |-------|------------|
 | `updating_more_results` | If `true`, start polling (see below) |
-| `results` | Render bus cards immediately |
-| `cache.hit` | `true` = same route was searched recently; results may be instant |
+| `results` | Render bus cards immediately (may be empty on cold start — keep polling) |
+| `cache.hit` | `true` = overall search session reused from Redis (instant). Separate from per-provider `sources[].cache_status`. |
+| `cache.stale` | `true` = session is past fresh TTL; background refresh may run |
+| `sources[].cache_status` | How **this response** got that provider’s data: `miss` = live scrape, `fresh`/`stale` = served from cache, `skipped` = cooldown |
+| `sources[].duration_ms` | Live scrape time on `miss`; `0` when this response was served from overall session cache |
 | `status` | `SUCCESS` / `PARTIAL_SUCCESS` / `SEARCH_FAILED` |
 
-HTTP **502** only when `status === "SEARCH_FAILED"` (every provider failed).
+**Cold-start timing:** POST returns within ~8s (`POST_FIRST_RESULT_WAIT_MS`) even if scrapers are still running. That avoids reverse-proxy **502 gateway timeouts**. Always poll `/status` + `/buses` while `updating_more_results === true`.
+
+**Cache labeling tip:** First search on a route often shows `cache_status: "miss"` and a long `duration_ms` (RedBus can take 2–4 min). That means live fetch succeeded and was **written** to cache — not that caching failed. The next search for the same route should show `cache.hit: true` and `sources[].cache_status: "fresh"` (or `"stale"`).
+
+HTTP status is always **200** for a valid search. Check `success` / `status` in the JSON body (`SEARCH_FAILED` when every provider failed).
 
 ---
 
@@ -351,8 +358,9 @@ All errors:
 | 400 | `VALIDATION_ERROR` | Bad request body |
 | 404 | `NOT_FOUND` | Invalid `search_id` |
 | 429 | `RATE_LIMIT_EXCEEDED` | Too many requests — back off |
-| 502 | — | Search failed (all providers) |
 | 500 | `INTERNAL_ERROR` | Server error |
+
+Use JSON `status: "SEARCH_FAILED"` / `success: false` when every provider failed (still HTTP 200).
 
 Optional header: `x-request-id` for debugging (server generates one if omitted).
 
@@ -418,4 +426,4 @@ curl "https://routex-api.fsgarage.in/api/v1/searches/SEARCH_ID/buses?sort=cheape
 - [ ] Use `offers[].listing_url` for book CTAs
 - [ ] Show `save_up_to_inr` + `platform_count` when `platform_count >= 2`
 - [ ] Sort/filter via GET `/buses` query params (not client-side on full dataset)
-- [ ] Handle 429 with backoff; handle 502 when search fully fails
+- [ ] Handle 429 with backoff; treat `status: SEARCH_FAILED` in the JSON body as a full failure

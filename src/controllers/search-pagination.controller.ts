@@ -82,7 +82,6 @@ export class SearchPaginationController {
       throw new AppError('Search session not found', { code: 'NOT_FOUND', statusCode: 404 });
     }
 
-    const statusCode = result.status === 'SEARCH_FAILED' ? 502 : 200;
-    await reply.status(statusCode).send(result);
+    await reply.status(200).send(result);
   }
 }

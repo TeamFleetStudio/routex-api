@@ -87,9 +87,11 @@ Start a multi-provider bus search.
 | `limit` | no | number | Max listings per source (1–50) |
 | `include_all` | no | boolean | Return all buses, skip pagination (debug) |
 
-#### Response `200` / `502`
+#### Response `200`
 
-HTTP status is `502` only when `status === "SEARCH_FAILED"` (all providers failed).
+HTTP status is always `200` for a valid search. Check `success` / `status` in the body (`SEARCH_FAILED` when all providers failed).
+
+POST returns within ~`POST_FIRST_RESULT_WAIT_MS` (default 8s) so reverse proxies do not time out; poll `/status` while `updating_more_results` is true.
 
 ```json
 {
@@ -651,8 +653,9 @@ All errors return:
 | `400` | `VALIDATION_ERROR` | Invalid body/query |
 | `404` | `NOT_FOUND` | Unknown `searchId` |
 | `429` | `RATE_LIMIT_EXCEEDED` | IP exceeded `RATE_LIMIT_MAX` per window |
-| `502` | *(in search body)* | `status: SEARCH_FAILED` |
 | `500` | `INTERNAL_ERROR` | Unexpected server error |
+
+Search outcomes use JSON `status` / `success` (always HTTP 200 for valid searches).
 
 **Headers:** Pass `x-request-id` for correlation; server generates one if omitted.
 

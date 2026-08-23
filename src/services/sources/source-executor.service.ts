@@ -11,12 +11,13 @@ import type { ProviderCacheService } from '../cache/provider-cache.service.js';
 import type { DistributedLockService } from '../cache/distributed-lock.service.js';
 import type { ProviderRefreshScheduler } from '../cache/provider-refresh.scheduler.js';
 import type { ProviderAnalyticsService } from '../analytics/provider-analytics.service.js';
-import { SourceTimeoutError } from '../../errors/index.js';
+import { SourceTimeoutError, NormalizationError } from '../../errors/index.js';
 import {
   buildProviderCacheKey,
   buildProviderLockKey,
 } from '../../utils/cache-key.js';
 import { logger } from '../../utils/logger.js';
+import { timeToMinutes } from '../../utils/time.js';
 
 export interface SourceExecutionResult {
   meta: SourceResultMeta;
@@ -164,32 +165,34 @@ export class SourceExecutorService {
     if (!entry) return null;
 
     if (entry.status === 'failed' && this.providerCache.isInRetryCooldown(entry)) {
-      if (entry.listings.length > 0) {
-        return {
-          meta: {
-            source,
-            status: 'SUCCESS',
-            duration_ms: Date.now() - started,
-            cache_status: 'stale',
-            message: entry.message,
-          },
-          listings: entry.listings,
-        };
+      // Legacy 422/schema failures must retry live (override_incompatible_schema fix).
+      if (
+        entry.listings.length === 0 &&
+        (entry.failure_kind === 'RESPONSE_STRUCTURE_CHANGED' ||
+          entry.message?.includes('422') ||
+          entry.message?.toLowerCase().includes('output_schema_incompatible'))
+      ) {
+        await this.providerCache.clearProvider(cacheKey, 'schema_failure_retry');
+        return null;
+      }
+      // Empty failure cooldowns must not block retries (stale Redis from older builds).
+      if (entry.listings.length === 0) {
+        return null;
       }
       return {
         meta: {
           source,
-          status: 'SKIPPED',
-          failure_kind: entry.failure_kind,
-          message: entry.message ?? 'Provider in retry cooldown',
+          status: 'SUCCESS',
           duration_ms: Date.now() - started,
-          cache_status: 'skipped',
+          cache_status: 'stale',
+          message: entry.message,
         },
-        listings: [],
+        listings: entry.listings,
       };
     }
 
     if (freshness === 'fresh' && entry.status === 'success') {
+      if (entry.listings.length === 0) return null;
       return {
         meta: {
           source,
@@ -248,21 +251,66 @@ export class SourceExecutorService {
       search.travel_date,
       search.depart_after,
     );
-    const token = await this.locks.acquire(lockKey);
+    // Lock must outlive the Bright Data scrape (often 2–4+ min). Default LOCK_TTL_MS
+    // (15s) expires mid-scrape and causes duplicate /dca/trigger jobs.
+    const lockTtlMs = Math.max(config.timeout_ms + 60_000, 120_000);
+    const token = await this.locks.acquire(lockKey, lockTtlMs);
 
     if (!token) {
-      const { entry } = await this.providerCache.getProvider(cacheKey);
-      if (entry && entry.listings.length > 0) {
+      logger.info({
+        event: 'SOURCE_STARTED',
+        source,
+        phase: 'awaiting_in_flight_fetch',
+        lock_key: lockKey,
+      });
+      // Another worker already triggered Bright Data — wait for their cache write.
+      // Never start a second live scrape for the same provider+route.
+      const waited = await this.locks.waitForCache(async () => {
+        const { entry } = await this.providerCache.getProvider(cacheKey);
+        if (!entry) return null;
+        if (entry.status === 'success' && entry.listings.length > 0) return entry;
+        if (entry.status === 'failed') return entry;
+        return null;
+      }, config.timeout_ms, 1_000);
+
+      if (waited && waited.listings.length > 0) {
         return {
           meta: {
             source,
             status: 'SUCCESS',
             duration_ms: Date.now() - started,
-            cache_status: 'stale',
+            cache_status: 'fresh',
+            message: waited.message,
           },
-          listings: entry.listings,
+          listings: waited.listings,
         };
       }
+
+      if (waited && waited.status === 'failed') {
+        return {
+          meta: {
+            source,
+            status: waited.failure_kind === 'TIMEOUT' ? 'TIMEOUT' : 'FAILED',
+            failure_kind: waited.failure_kind,
+            message: waited.message ?? 'Provider fetch failed (shared in-flight)',
+            duration_ms: Date.now() - started,
+            cache_status: 'miss',
+          },
+          listings: [],
+        };
+      }
+
+      return {
+        meta: {
+          source,
+          status: 'TIMEOUT',
+          failure_kind: 'TIMEOUT',
+          message: 'Timed out waiting for in-flight provider fetch',
+          duration_ms: Date.now() - started,
+          cache_status: 'miss',
+        },
+        listings: [],
+      };
     }
 
     try {
@@ -352,7 +400,14 @@ export class SourceExecutorService {
             config.timeout_ms,
             source,
           );
-          return this.normalization.normalize(source, raw.payload, search);
+          const normalized = this.normalization.normalize(source, raw.payload, search);
+          if (normalized.length === 0) {
+            throw new NormalizationError(
+              source,
+              'No bus listings extracted from provider response',
+            );
+          }
+          return filterListingsByDepartAfter(normalized, search.depart_after);
         },
         { retryCount: config.retry_count, source },
       );
@@ -395,7 +450,14 @@ export class SourceExecutorService {
               config.timeout_ms,
               source,
             );
-            const listings = this.normalization.normalize(source, raw.payload, search);
+            const normalized = this.normalization.normalize(source, raw.payload, search);
+            if (normalized.length === 0) {
+              throw new NormalizationError(
+                source,
+                'No bus listings extracted from provider response',
+              );
+            }
+            const listings = filterListingsByDepartAfter(normalized, search.depart_after);
             await this.circuitBreaker.recordSuccess(source);
             await this.health.recordSuccess(source);
             logger.info({
@@ -458,4 +520,19 @@ export class SourceExecutorService {
       if (timer) clearTimeout(timer);
     }
   }
+}
+
+/** Apply POST depart_after after scrape (Bright Data must not receive time — breaks RedBus). */
+function filterListingsByDepartAfter(
+  listings: NormalizedBusListing[],
+  departAfter: string | undefined,
+): NormalizedBusListing[] {
+  const trimmed = departAfter?.trim();
+  if (!trimmed) return listings;
+  const min = timeToMinutes(trimmed);
+  if (min === null) return listings;
+  return listings.filter((listing) => {
+    const dep = timeToMinutes(listing.departure_time);
+    return dep === null || dep >= min;
+  });
 }

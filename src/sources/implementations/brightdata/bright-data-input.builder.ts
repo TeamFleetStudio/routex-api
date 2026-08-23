@@ -2,7 +2,7 @@ import type { BusSearchRequest } from '../../../types/bus.types.js';
 import type { Env } from '../../../config/env.js';
 import {
   buildAbhiBusSearchUrl,
-  buildClearTripSearchUrl,
+  buildClearTripListingUrl,
   buildMakeMyTripSearchUrl,
   buildRedBusSearchUrl,
   buildSourceSearchUrl,
@@ -56,7 +56,11 @@ export function buildBrightDataInputs(
   if (site === 'cleartrip') {
     return [
       {
-        url: buildClearTripSearchUrl(search.from_city, search.to_city),
+        url: buildClearTripListingUrl(
+          search.from_city,
+          search.to_city,
+          search.travel_date,
+        ),
       },
     ];
   }
@@ -64,7 +68,9 @@ export function buildBrightDataInputs(
   const from = resolveCityDisplayName(search.from_city);
   const to = resolveCityDisplayName(search.to_city);
   const date = search.travel_date;
-  const time = search.depart_after?.trim() ?? '';
+  // Never send depart_after to Bright Data — it can make RedBus return 0 records.
+  // Time filtering is applied after scrape in SourceExecutorService.
+  const time = '';
   const limit = search.limit ?? defaultLimit;
 
   const url =

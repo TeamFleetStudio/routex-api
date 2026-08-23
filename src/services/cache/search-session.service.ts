@@ -78,9 +78,16 @@ export class SearchSessionService {
     }
   }
 
-  buildSessionTimestamps(now = Date.now()): Pick<SearchSession, 'fresh_until' | 'stale_until'> {
+  buildSessionTimestamps(
+    options?: { fresh?: boolean },
+    now = Date.now(),
+  ): Pick<SearchSession, 'fresh_until' | 'stale_until'> {
+    const fresh = options?.fresh ?? true;
     return {
-      fresh_until: new Date(now + this.env.PROVIDER_CACHE_FRESH_MS).toISOString(),
+      // Overall cache is only "fresh" when every provider succeeded.
+      fresh_until: fresh
+        ? new Date(now + this.env.PROVIDER_CACHE_FRESH_MS).toISOString()
+        : new Date(now).toISOString(),
       stale_until: new Date(now + this.env.PROVIDER_CACHE_STALE_MS).toISOString(),
     };
   }

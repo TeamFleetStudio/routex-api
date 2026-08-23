@@ -60,6 +60,11 @@ export function normalizeTimeTo24h(value: unknown): string | null {
     return to24h(Number(ampmColon[1]), Number(ampmColon[2]), ampmColon[3]);
   }
 
+  const ampmCompact = /^(\d{1,2}):(\d{2})(AM|PM)$/i.exec(raw);
+  if (ampmCompact) {
+    return to24h(Number(ampmCompact[1]), Number(ampmCompact[2]), ampmCompact[3]);
+  }
+
   const ampmDot = /^(\d{1,2})\.(\d{2})\s*(AM|PM)$/i.exec(raw);
   if (ampmDot) {
     return to24h(Number(ampmDot[1]), Number(ampmDot[2]), ampmDot[3]);

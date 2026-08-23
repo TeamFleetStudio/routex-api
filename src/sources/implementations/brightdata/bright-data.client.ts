@@ -9,6 +9,8 @@ export interface BrightDataClientOptions {
   pollIntervalMs: number;
   maxPollAttempts: number;
   sourceName: string;
+  /** @deprecated Always applied on trigger; kept for call-site compat. */
+  overrideIncompatibleSchema?: boolean;
 }
 
 export class BrightDataClient {
@@ -40,7 +42,14 @@ export class BrightDataClient {
   }
 
   async trigger(collectorId: string, inputs: unknown[]): Promise<string> {
-    const url = `${this.baseUrl}/dca/trigger?collector=${encodeURIComponent(collectorId)}&queue_next=1`;
+    // Always override — MMT (and healed collectors) often diverge from the linked
+    // output schema; without this Bright Data returns 422 output_schema_incompatible.
+    const params = new URLSearchParams({
+      collector: collectorId,
+      queue_next: '1',
+      override_incompatible_schema: '1',
+    });
+    const url = `${this.baseUrl}/dca/trigger?${params.toString()}`;
 
     let res;
     try {
@@ -65,9 +74,12 @@ export class BrightDataClient {
       throw new ExternalApiError(this.sourceName, 'Bright Data server error', res.statusCode);
     }
     if (res.statusCode >= 400) {
+      const detail = summarizeBrightDataError(text);
       throw new ExternalApiError(
         this.sourceName,
-        `Bright Data trigger failed (${res.statusCode})`,
+        detail
+          ? `Bright Data trigger failed (${res.statusCode}): ${detail}`
+          : `Bright Data trigger failed (${res.statusCode})`,
         res.statusCode,
       );
     }
@@ -182,21 +194,16 @@ export class BrightDataClient {
         return parsed;
       }
 
-      if (
-        typeof parsed === 'object' &&
-        parsed !== null &&
-        'data' in parsed &&
-        Array.isArray((parsed as { data: unknown }).data)
-      ) {
-        const data = (parsed as { data: unknown[] }).data;
+      const nested = extractDatasetRecords(parsed);
+      if (nested) {
         logger.info({
           event: 'SOURCE_SUCCESS',
           source: this.sourceName,
           collection_id: collectionId,
           phase: 'bright_data_ready',
-          count: data.length,
+          count: nested.length,
         });
-        return data;
+        return nested;
       }
 
       throw new ExternalApiError(
@@ -217,4 +224,32 @@ export class BrightDataClient {
     const status = (parsed as { status?: unknown }).status;
     return typeof status === 'string' && status.toLowerCase() === 'building';
   }
+}
+
+function extractDatasetRecords(parsed: unknown): unknown[] | null {
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const obj = parsed as Record<string, unknown>;
+  for (const key of ['data', 'records', 'results'] as const) {
+    const value = obj[key];
+    if (Array.isArray(value)) return value;
+  }
+  return null;
+}
+
+function summarizeBrightDataError(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as {
+      error?: { message?: string; code?: string };
+      message?: string;
+    };
+    const msg = parsed.error?.message ?? parsed.message;
+    const code = parsed.error?.code;
+    if (msg && code) return `${code}: ${msg}`;
+    if (msg) return msg;
+  } catch {
+    /* fall through */
+  }
+  return trimmed.slice(0, 300);
 }

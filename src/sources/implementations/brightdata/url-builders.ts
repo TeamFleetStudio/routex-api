@@ -159,6 +159,6 @@ export function buildSourceSearchUrl(
     case 'makemytrip':
       return buildMakeMyTripSearchUrl(search.from_city, search.to_city);
     case 'cleartrip':
-      return buildClearTripSearchUrl(search.from_city, search.to_city);
+      return buildClearTripListingUrl(search.from_city, search.to_city, date);
   }
 }

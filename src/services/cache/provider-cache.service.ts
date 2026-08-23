@@ -30,6 +30,12 @@ export class ProviderCacheService {
       }
 
       const entry = JSON.parse(raw) as ProviderCacheEntry;
+
+      if (this.shouldInvalidateFailedEntry(entry)) {
+        await this.clearProvider(key, 'stale_schema_failure');
+        return { entry: null, freshness: 'miss' };
+      }
+
       const freshness = this.cacheService.evaluateFreshness({
         data: entry,
         created_at: entry.last_fetched_at,
@@ -41,6 +47,24 @@ export class ProviderCacheService {
       return { entry, freshness };
     } catch (err) {
       throw new CacheError('Failed to read provider cache', err);
+    }
+  }
+
+  /** Drop legacy 422 cooldown rows so MMT can retry with override_incompatible_schema. */
+  private shouldInvalidateFailedEntry(entry: ProviderCacheEntry): boolean {
+    if (entry.status !== 'failed') return false;
+    if (entry.listings.length > 0) return false;
+    if (entry.failure_kind === 'RESPONSE_STRUCTURE_CHANGED') return true;
+    const msg = entry.message?.toLowerCase() ?? '';
+    return msg.includes('422') || msg.includes('output_schema_incompatible');
+  }
+
+  async clearProvider(key: string, reason: string): Promise<void> {
+    try {
+      await this.redis.del(key);
+      logger.info({ event: 'PROVIDER_CACHE_CLEARED', key, reason });
+    } catch (err) {
+      throw new CacheError('Failed to clear provider cache', err);
     }
   }
 
@@ -75,6 +99,23 @@ export class ProviderCacheService {
     error: { failure_kind: FailureKind; message: string },
     previousListings: NormalizedBusListing[] = [],
   ): Promise<void> {
+    // Empty failures must not enter a long SKIPPED cooldown — that freezes bad
+    // state into overall search sessions. Keep stale listings only.
+    if (previousListings.length === 0) {
+      try {
+        await this.redis.del(key);
+        logger.info({
+          event: 'PROVIDER_CACHE_CLEARED',
+          key,
+          status: 'failed_empty',
+          failure_kind: error.failure_kind,
+        });
+      } catch (err) {
+        throw new CacheError('Failed to clear provider failure cache', err);
+      }
+      return;
+    }
+
     const staleTtlMs = this.env.PROVIDER_CACHE_STALE_MS;
     const retryAfterMs = this.env.PROVIDER_RETRY_COOLDOWN_MS;
     const now = Date.now();

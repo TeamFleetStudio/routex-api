@@ -123,6 +123,8 @@ export async function buildApp(env: Env) {
       pollIntervalMs: env.BRIGHT_DATA_POLL_INTERVAL_MS,
       maxPollAttempts: env.BRIGHT_DATA_MAX_POLL_ATTEMPTS,
       sourceName,
+      // Always on in client.trigger; keep flag for clarity / future collectors.
+      overrideIncompatibleSchema: true,
     });
 
   const scraperLimit = env.SCRAPER_DEFAULT_LIMIT;
@@ -177,6 +179,7 @@ export async function buildApp(env: Env) {
     matching,
     sessionService,
     searchEvents,
+    env.POST_FIRST_RESULT_WAIT_MS,
   );
   const searchService = new SearchService(
     sessionService,
