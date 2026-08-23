@@ -118,7 +118,7 @@ Content-Type: application/json
 | `sources[].duration_ms` | Live scrape time on `miss`; `0` when this response was served from overall session cache |
 | `status` | `SUCCESS` / `PARTIAL_SUCCESS` / `SEARCH_FAILED` |
 
-**Cold-start timing:** POST returns within ~8s (`POST_FIRST_RESULT_WAIT_MS`) even if scrapers are still running. That avoids reverse-proxy **502 gateway timeouts**. Always poll `/status` + `/buses` while `updating_more_results === true`.
+**Cold-start timing:** POST returns in under ~5s (often &lt;1s) with `search_id` + `updating_more_results`. Scrapes continue in background — that avoids reverse-proxy **502 gateway timeouts**. Always poll `/status` + `/buses` while `updating_more_results === true`. The API never intentionally returns HTTP 502 for search.
 
 **Cache labeling tip:** First search on a route often shows `cache_status: "miss"` and a long `duration_ms` (RedBus can take 2–4 min). That means live fetch succeeded and was **written** to cache — not that caching failed. The next search for the same route should show `cache.hit: true` and `sources[].cache_status: "fresh"` (or `"stale"`).
 

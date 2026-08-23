@@ -56,7 +56,12 @@ export class ProviderCacheService {
     if (entry.listings.length > 0) return false;
     if (entry.failure_kind === 'RESPONSE_STRUCTURE_CHANGED') return true;
     const msg = entry.message?.toLowerCase() ?? '';
-    return msg.includes('422') || msg.includes('output_schema_incompatible');
+    return (
+      msg.includes('422') ||
+      msg.includes('output_schema_incompatible') ||
+      msg.includes('schema incompatible') ||
+      msg.includes('incompatible (trigger)')
+    );
   }
 
   async clearProvider(key: string, reason: string): Promise<void> {

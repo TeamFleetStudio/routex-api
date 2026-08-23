@@ -61,7 +61,23 @@ export class FailureClassifierService {
           message: error.message,
         };
       }
+      // Bright Data trigger 422 (output_schema_incompatible) is NOT a scrape/HTML
+      // structure change — do not label it RESPONSE_STRUCTURE_CHANGED.
       if (status === 422) {
+        const msg = error.message.toLowerCase();
+        if (
+          msg.includes('output_schema') ||
+          msg.includes('incompatible') ||
+          msg.includes('trigger failed') ||
+          msg.includes('override_incompatible')
+        ) {
+          return {
+            kind: 'INVALID_RESPONSE',
+            retryable: false,
+            mayTriggerSelfHealing: true,
+            message: `Bright Data collector schema incompatible (trigger): ${error.message}`,
+          };
+        }
         return {
           kind: 'RESPONSE_STRUCTURE_CHANGED',
           retryable: false,
@@ -98,6 +114,19 @@ export class FailureClassifierService {
           retryable: true,
           mayTriggerSelfHealing: true,
           message: error.message,
+        };
+      }
+      // Trigger schema mismatches — not HTML/DOM structure changes.
+      if (
+        msg.includes('output_schema') ||
+        msg.includes('incompatible_schema') ||
+        (msg.includes('trigger failed') && msg.includes('422'))
+      ) {
+        return {
+          kind: 'INVALID_RESPONSE',
+          retryable: false,
+          mayTriggerSelfHealing: true,
+          message: `Bright Data collector schema incompatible (trigger): ${error.message}`,
         };
       }
       if (msg.includes('structure') || msg.includes('schema')) {

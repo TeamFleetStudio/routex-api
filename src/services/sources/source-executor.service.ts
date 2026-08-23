@@ -169,8 +169,10 @@ export class SourceExecutorService {
       if (
         entry.listings.length === 0 &&
         (entry.failure_kind === 'RESPONSE_STRUCTURE_CHANGED' ||
+          entry.failure_kind === 'INVALID_RESPONSE' ||
           entry.message?.includes('422') ||
-          entry.message?.toLowerCase().includes('output_schema_incompatible'))
+          entry.message?.toLowerCase().includes('output_schema_incompatible') ||
+          entry.message?.toLowerCase().includes('schema incompatible'))
       ) {
         await this.providerCache.clearProvider(cacheKey, 'schema_failure_retry');
         return null;

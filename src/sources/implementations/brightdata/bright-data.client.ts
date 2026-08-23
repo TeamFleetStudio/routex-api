@@ -51,6 +51,15 @@ export class BrightDataClient {
     });
     const url = `${this.baseUrl}/dca/trigger?${params.toString()}`;
 
+    logger.info({
+      event: 'BRIGHT_DATA_TRIGGER',
+      source: this.sourceName,
+      collector: collectorId,
+      override_incompatible_schema: true,
+      url,
+      input_count: inputs.length,
+    });
+
     let res;
     try {
       res = await request(url, {
@@ -75,6 +84,7 @@ export class BrightDataClient {
     }
     if (res.statusCode >= 400) {
       const detail = summarizeBrightDataError(text);
+      const bodyPreview = text.trim().slice(0, 400) || '(empty body)';
       logger.warn({
         event: 'BRIGHT_DATA_TRIGGER_FAILED',
         source: this.sourceName,
@@ -82,13 +92,12 @@ export class BrightDataClient {
         status_code: res.statusCode,
         override_incompatible_schema: true,
         url,
-        detail: detail ?? text.slice(0, 300),
+        detail: detail ?? bodyPreview,
       });
+      // Never emit a bare "(422)" — always include Bright Data body / parsed detail.
       throw new ExternalApiError(
         this.sourceName,
-        detail
-          ? `Bright Data trigger failed (${res.statusCode}): ${detail}`
-          : `Bright Data trigger failed (${res.statusCode})`,
+        `Bright Data trigger failed (${res.statusCode}): ${detail ?? bodyPreview}`,
         res.statusCode,
       );
     }
