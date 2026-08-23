@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+
+# Remove Cursor co-author trailers from commit messages
+if [ -n "$1" ] && [ -f "$1" ]; then
+  grep -v 'Co-authored-by: Cursor' "$1" | grep -v 'Made-with: Cursor' | grep -v 'Made with Cursor' > "$1.tmp" || true
+  mv "$1.tmp" "$1"
+fi
