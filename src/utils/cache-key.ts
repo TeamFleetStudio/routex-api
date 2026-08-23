@@ -1,11 +1,8 @@
+import { slugifyCity } from '../sources/implementations/brightdata/city-registry.js';
+
+/** Canonical city slug for cache keys (aliases like bengaluru → bangalore). */
 export function normalizeCity(city: string): string {
-  return city
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .normalize('NFKD')
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s/g, '-');
+  return slugifyCity(city);
 }
 
 /** Normalize depart_after (HH:MM) into a cache key segment. */

@@ -12,6 +12,7 @@ import type {
   SearchFinishedEvent,
   SessionUpdatedEvent,
 } from './search-events.service.js';
+import { isSearchUpdating } from './search-progress.util.js';
 import { buildSearchLockKey } from '../../utils/cache-key.js';
 import { paginateResults } from '../../utils/pagination.js';
 import { logger } from '../../utils/logger.js';
@@ -81,7 +82,7 @@ export class SearchService {
       results: paginated.data,
       total_buses: filtered.length,
       pagination: paginated.pagination,
-      updating_more_results: this.isUpdating(session),
+      updating_more_results: isSearchUpdating(session),
       cache: { hit: true, stale: false },
     };
   }
@@ -113,7 +114,7 @@ export class SearchService {
       progress_percent: progressPercent,
       providers,
       total_buses: session.total_buses,
-      updating_more_results: this.isUpdating(session),
+      updating_more_results: isSearchUpdating(session),
     };
   }
 
@@ -165,7 +166,7 @@ export class SearchService {
       results: paginated.data,
       total_buses: session.total_buses,
       pagination: paginated.pagination,
-      updating_more_results: this.isUpdating(session),
+      updating_more_results: isSearchUpdating(session),
       cache,
     };
   }
@@ -181,14 +182,6 @@ export class SearchService {
       };
     }
     return progress;
-  }
-
-  private isUpdating(session: SearchSession): boolean {
-    const total = session.total_providers ?? session.sources.length;
-    if (session.sources.length < total) return true;
-    return session.sources.some(
-      (s) => s.cache_status === 'stale' || s.cache_status === 'skipped' || s.status === 'SKIPPED',
-    );
   }
 
   private async fetchWithLock(

@@ -10,6 +10,7 @@ import type { SourceExecutorService, SourceExecutionResult } from '../sources/so
 import type { BusMatchingService } from '../matching/bus-matching.service.js';
 import type { SearchSessionService } from '../cache/search-session.service.js';
 import type { SearchEventsService } from './search-events.service.js';
+import { isSearchUpdating } from './search-progress.util.js';
 import { paginateResults } from '../../utils/pagination.js';
 import { logger } from '../../utils/logger.js';
 
@@ -238,7 +239,7 @@ export class SearchOrchestratorService {
       results: paginated.data,
       total_buses: session.total_buses,
       pagination: paginated.pagination,
-      updating_more_results: this.isUpdating(session),
+      updating_more_results: isSearchUpdating(session),
     };
   }
 
@@ -271,15 +272,6 @@ export class SearchOrchestratorService {
     if (total === 0 || successes === 0) return 'SEARCH_FAILED';
     if (successes < total) return 'PARTIAL_SUCCESS';
     return 'SUCCESS';
-  }
-
-  private isUpdating(session: SearchSession): boolean {
-    const total = session.total_providers ?? session.sources.length;
-    const completed = session.sources.length;
-    if (completed < total) return true;
-    return session.sources.some(
-      (s) => s.cache_status === 'stale' || s.cache_status === 'skipped' || s.status === 'SKIPPED',
-    );
   }
 
   private logSearchCompletion(status: SearchStatus, requestId: string, searchId: string): void {
