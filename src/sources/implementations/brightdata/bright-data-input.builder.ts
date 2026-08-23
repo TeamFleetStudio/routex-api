@@ -17,7 +17,7 @@ export function resolveCollectorId(site: BrightDataSite, env: Env): string {
     case 'redbus':
       return env.REDBUS_COLLECTOR_ID;
     case 'abhibus':
-      return env.ABHIBUS_COLLECTOR_ID;
+      return 'c_mt494k6m154fl23cty';
     case 'makemytrip':
       return env.MAKEMYTRIP_COLLECTOR_ID;
     case 'cleartrip':

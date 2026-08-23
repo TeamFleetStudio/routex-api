@@ -144,7 +144,7 @@ export function getSiteDefinition(site: BusSite): SiteDefinition {
 export function getAllSiteCollectorIds(env: Record<string, string | undefined>): Record<BusSite, string> {
   return {
     redbus: env.REDBUS_COLLECTOR_ID ?? getSiteDefinition('redbus').defaultCollectorId,
-    abhibus: env.ABHIBUS_COLLECTOR_ID ?? getSiteDefinition('abhibus').defaultCollectorId,
+    abhibus: getSiteDefinition('abhibus').defaultCollectorId,
   };
 }
 
