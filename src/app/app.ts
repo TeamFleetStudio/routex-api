@@ -188,6 +188,7 @@ export async function buildApp(env: Env) {
     refreshScheduler,
     searchFilter,
     searchEvents,
+    env.POST_HARD_DEADLINE_MS,
   );
   const controller = new BusSearchController(searchService);
   const paginationController = new SearchPaginationController(searchService);

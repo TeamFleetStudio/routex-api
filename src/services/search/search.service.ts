@@ -16,6 +16,7 @@ import type {
 import { isSearchUpdating } from './search-progress.util.js';
 import { buildSearchLockKey } from '../../utils/cache-key.js';
 import { paginateResults } from '../../utils/pagination.js';
+import { sleep } from '../../utils/time.js';
 import { logger } from '../../utils/logger.js';
 
 export interface SearchOptions {
@@ -34,9 +35,79 @@ export class SearchService {
     private readonly refreshScheduler: ProviderRefreshScheduler,
     private readonly filterService: SearchFilterService,
     private readonly searchEvents: SearchEventsService,
+    /** Hard ceiling for POST /buses/search (ms). Prevents EasyPanel HTML 502. */
+    private readonly postHardDeadlineMs = 5_000,
   ) {}
 
   async search(
+    request: BusSearchRequest,
+    requestId: string,
+    options?: SearchOptions,
+  ): Promise<BusSearchResponse> {
+    // Never hold the HTTP connection long enough for a reverse-proxy 502.
+    if (options?.waitAll) {
+      return this.searchInner(request, requestId, options);
+    }
+
+    const deadlineMs = this.postHardDeadlineMs;
+    let timedOut = false;
+    const result = await Promise.race([
+      this.searchInner(request, requestId, options),
+      sleep(deadlineMs).then(() => {
+        timedOut = true;
+        return null;
+      }),
+    ]);
+
+    if (result) return result;
+
+    // Deadline hit — return whatever session exists for this route (or a stub).
+    const existingId = await this.sessionService.getRouteSessionId(request);
+    if (existingId) {
+      const { session } = await this.sessionService.getSession(existingId);
+      if (session) {
+        logger.info({
+          event: 'SEARCH_POST_HARD_DEADLINE',
+          request_id: requestId,
+          search_id: existingId,
+          deadline_ms: deadlineMs,
+        });
+        return this.responseFromSession(session, requestId, options?.includeAll, {
+          hit: true,
+          stale: true,
+        });
+      }
+    }
+
+    logger.warn({
+      event: 'SEARCH_POST_HARD_DEADLINE_NO_SESSION',
+      request_id: requestId,
+      deadline_ms: deadlineMs,
+      timed_out: timedOut,
+    });
+    // Last resort: start a background search without blocking (lock may still be held by race).
+    void this.searchInner(request, requestId, options).catch((err) => {
+      logger.warn({
+        event: 'SEARCH_BACKGROUND_AFTER_DEADLINE_FAILED',
+        request_id: requestId,
+        message: err instanceof Error ? err.message : 'unknown',
+      });
+    });
+    return {
+      success: true,
+      status: 'PARTIAL_SUCCESS',
+      request_id: requestId,
+      search_id: existingId ?? 'pending',
+      sources: [],
+      results: [],
+      total_buses: 0,
+      pagination: { limit: 0, total_items: 0, has_more: false, next_cursor: null },
+      updating_more_results: true,
+      cache: { hit: false, stale: false },
+    };
+  }
+
+  private async searchInner(
     request: BusSearchRequest,
     requestId: string,
     options?: SearchOptions,
@@ -242,8 +313,8 @@ export class SearchService {
       // a second set of Bright Data collectors.
       const waitedId = await this.locks.waitForCache(
         () => this.sessionService.getRouteSessionId(request),
-        30_000,
-        250,
+        2_000,
+        200,
       );
       if (waitedId) {
         const { session } = await this.sessionService.getSession(waitedId);

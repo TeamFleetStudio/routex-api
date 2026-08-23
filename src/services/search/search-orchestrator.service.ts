@@ -29,8 +29,8 @@ export class SearchOrchestratorService {
     private readonly matching: BusMatchingService,
     private readonly sessionService: SearchSessionService,
     private readonly searchEvents?: SearchEventsService,
-    /** Soft wait for first provider on POST (ms). 0 = return immediately. */
-    private readonly firstResultWaitMs = 8_000,
+    /** Soft wait for first provider on POST (ms). 0 = return immediately after session create. */
+    private readonly firstResultWaitMs = 0,
   ) {}
 
   async search(

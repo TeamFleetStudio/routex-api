@@ -55,10 +55,12 @@ const envSchema = z.object({
   PROVIDER_RETRY_COOLDOWN_MS: z.coerce.number().int().positive().default(900_000),
   /**
    * Max time POST /buses/search waits for the first provider before returning
-   * (search_id + updating_more_results). Keeps responses under reverse-proxy
-   * timeouts (EasyPanel/Traefik ~30–60s). Scrapes continue in background.
+   * (search_id + updating_more_results). Keep low (0–3000) so EasyPanel/Traefik
+   * never gateway-timeout with HTML 502. Scrapes continue in background.
    */
-  POST_FIRST_RESULT_WAIT_MS: z.coerce.number().int().nonnegative().default(8_000),
+  POST_FIRST_RESULT_WAIT_MS: z.coerce.number().int().nonnegative().default(0),
+  /** Absolute ceiling for the whole POST handler (ms). Soft-return session if hit. */
+  POST_HARD_DEADLINE_MS: z.coerce.number().int().positive().default(5_000),
 });
 
 export type Env = z.infer<typeof envSchema>;

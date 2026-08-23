@@ -22,8 +22,8 @@ export class BusSearchController {
       includeAll: parsed.data.include_all,
       waitAll,
     });
-    // Always 200 — failure is in body (`status` / `success`). HTTP 502 here was
-    // confused with EasyPanel/Traefik gateway timeouts on long progressive scrapes.
+    // Always HTTP 200 — never 502 (gateway timeouts / AppError 502 confuse clients).
+    // Failure is signaled via body `success` / `status`.
     await reply.status(200).send(result);
   }
 }

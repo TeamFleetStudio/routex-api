@@ -60,12 +60,18 @@ export function errorHandler(
       message: error.message,
       request_id: requestId,
     });
-    void reply.status(error.statusCode).send(toErrorBody(error, requestId));
+    // Never return HTTP 502 — proxies/browsers treat it as "gateway down".
+    // Provider failures are handled inside search; if an AppError still escapes,
+    // use 503 (retryable) or the original non-502 code.
+    const status =
+      error.statusCode === 502 || error.statusCode === 504 ? 503 : error.statusCode;
+    void reply.status(status).send(toErrorBody(error, requestId));
     return;
   }
 
-  const statusCode =
+  const rawStatus =
     'statusCode' in error && typeof error.statusCode === 'number' ? error.statusCode : 500;
+  const statusCode = rawStatus === 502 || rawStatus === 504 ? 503 : rawStatus >= 400 ? rawStatus : 500;
 
   request.log.error({
     event: 'UNHANDLED_ERROR',
@@ -73,5 +79,5 @@ export function errorHandler(
     request_id: requestId,
   });
 
-  void reply.status(statusCode >= 400 ? statusCode : 500).send(toErrorBody(error, requestId));
+  void reply.status(statusCode).send(toErrorBody(error, requestId));
 }
