@@ -8,6 +8,7 @@ import { shortHash } from '../../utils/hash.js';
 import type { MatchingStrategy } from './matching-strategy.js';
 import type { MatchingScoreService } from './matching-score.service.js';
 import { NormalizationEnrichmentService } from './normalization-enrichment.service.js';
+import { buildFallbackListingUrl } from '../../sources/implementations/scraper/listing-url-builder.js';
 
 const SAME_THRESHOLD = 80;
 const SIMILAR_THRESHOLD = 65;
@@ -135,7 +136,14 @@ export class DefaultMatchingStrategy implements MatchingStrategy {
         difference_from_cheapest: difference,
         difference_percentage: pct,
         source_listing_id: g.source_listing_id,
-        listing_url: g.listing_url,
+        listing_url:
+          g.listing_url ??
+          buildFallbackListingUrl(
+            g.source_site,
+            g.search,
+            g.source_listing_id,
+            null,
+          ),
       };
     });
 

@@ -33,11 +33,22 @@ export function buildFallbackListingUrl(
       }
       return base;
     }
-    case 'cleartrip':
-      return (
-        scrapedParentUrl ??
-        buildClearTripListingUrl(search.from_city, search.to_city, search.travel_date)
+    case 'cleartrip': {
+      const withDate = buildClearTripListingUrl(
+        search.from_city,
+        search.to_city,
+        search.travel_date,
       );
+      if (!scrapedParentUrl) return withDate;
+      try {
+        const url = new URL(scrapedParentUrl);
+        const [y, m, d] = search.travel_date.split('-');
+        url.searchParams.set('departureDate', `${d}/${m}/${y}`);
+        return url.toString();
+      } catch {
+        return withDate;
+      }
+    }
     case 'redbus':
       return (
         scrapedParentUrl ??
