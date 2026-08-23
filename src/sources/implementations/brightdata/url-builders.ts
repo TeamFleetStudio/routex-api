@@ -101,6 +101,12 @@ export function buildRedBusSearchUrl(
   return `https://www.redbus.in/bus-tickets/${fromSlug}-to-${toSlug}?${params.toString()}`;
 }
 
+export function buildMakeMyTripSearchUrl(fromCity: string, toCity: string): string {
+  const fromSlug = slugifyCityForPath(fromCity);
+  const toSlug = slugifyCityForPath(toCity);
+  return `https://www.makemytrip.com/bus-tickets/${fromSlug}-${toSlug}-bus-ticket-booking.html`;
+}
+
 export function buildSourceSearchUrl(
   site: BusSite,
   search: BusSearchRequest,

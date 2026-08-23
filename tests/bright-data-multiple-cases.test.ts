@@ -186,11 +186,11 @@ describe('collector ID resolution', () => {
     resetEnvCache();
     const env = loadEnv({ REDIS_URL: 'redis://localhost:6379' });
 
-    expect(resolveCollectorId('redbus', env)).toBe('c_mt45kbsacfoxm1vlm');
+    expect(resolveCollectorId('redbus', env)).toBe('c_mt5kcpdj13nspwzrzd');
     expect(resolveCollectorId('abhibus', env)).toBe('c_mt494k6m154fl23cty');
 
     const ids = getAllSiteCollectorIds({});
-    expect(ids.redbus).toBe('c_mt45kbsacfoxm1vlm');
+    expect(ids.redbus).toBe('c_mt5kcpdj13nspwzrzd');
     expect(ids.abhibus).toBe('c_mt494k6m154fl23cty');
   });
 

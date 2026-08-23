@@ -27,7 +27,7 @@ export interface BrightDataCliHealResult {
   stderr: string;
 }
 
-const BRIGHT_DATA_SITES = new Set<string>(['redbus', 'abhibus']);
+const BRIGHT_DATA_SITES = new Set<string>(['redbus', 'makemytrip']);
 
 export function isBrightDataSource(source: string): source is BrightDataSite {
   return BRIGHT_DATA_SITES.has(source);

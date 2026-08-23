@@ -32,9 +32,9 @@ async function main(): Promise<void> {
     throw new Error('BRIGHT_DATA_API_TOKEN is required');
   }
 
-  const from = 'Chennai';
-  const to = 'Bengaluru';
-  const date = '2026-08-25';
+  const from = 'Bangalore';
+  const to = 'Hyderabad';
+  const date = '2026-08-23';
 
   const search = {
     from_city: from,
@@ -43,10 +43,8 @@ async function main(): Promise<void> {
   };
 
   const redbusInputs = buildBrightDataInputs('redbus', search, env.SCRAPER_DEFAULT_LIMIT);
-  const abhiInputs = buildBrightDataInputs('abhibus', search, env.ABHIBUS_RESULT_LIMIT);
 
   console.log('RedBus inputs:', redbusInputs);
-  console.log('AbhiBus inputs:', abhiInputs);
 
   const redbusClient = new BrightDataClient({
     apiToken: env.BRIGHT_DATA_API_TOKEN,
@@ -56,17 +54,7 @@ async function main(): Promise<void> {
     sourceName: 'redbus',
   });
 
-  const abhiClient = new BrightDataClient({
-    apiToken: env.BRIGHT_DATA_API_TOKEN,
-    baseUrl: env.BRIGHT_DATA_BASE_URL,
-    pollIntervalMs: env.BRIGHT_DATA_POLL_INTERVAL_MS,
-    maxPollAttempts: env.BRIGHT_DATA_MAX_POLL_ATTEMPTS,
-    sourceName: 'abhibus',
-  });
-
-  // Run sequentially to avoid slamming the API
   await probeOne('redbus', redbusClient, env.REDBUS_COLLECTOR_ID, redbusInputs);
-  await probeOne('abhibus', abhiClient, env.ABHIBUS_COLLECTOR_ID, abhiInputs);
 }
 
 main().catch((err) => {

@@ -25,7 +25,7 @@ External providers (Bright Data Scraper Studio collectors only):
 
 | Source | `source_site` | Env collector ID | Default collector |
 |--------|---------------|------------------|-------------------|
-| RedBus | `redbus` | `REDBUS_COLLECTOR_ID` | `c_mt45kbsacfoxm1vlm` |
+| RedBus | `redbus` | `REDBUS_COLLECTOR_ID` | `c_mt5kcpdj13nspwzrzd` |
 | AbhiBus | `abhibus` | `ABHIBUS_COLLECTOR_ID` | `c_mt494k6m154fl23cty` |
 
 Flow: build studio payload → `POST /dca/trigger` → poll `GET /dca/dataset` → unified scraper adapter → normalization → matching.

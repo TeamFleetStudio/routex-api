@@ -19,7 +19,7 @@ describe('city registry', () => {
   it('maps both bus sites with collector env keys', () => {
     expect(BUS_SITES).toHaveLength(2);
     expect(BUS_SITES.map((s) => s.site)).toEqual(['redbus', 'abhibus']);
-    expect(BUS_SITES[0].defaultCollectorId).toBe('c_mt45kbsacfoxm1vlm');
+    expect(BUS_SITES[0].defaultCollectorId).toBe('c_mt5kcpdj13nspwzrzd');
     expect(BUS_SITES[1].defaultCollectorId).toBe('c_mt494k6m154fl23cty');
   });
 

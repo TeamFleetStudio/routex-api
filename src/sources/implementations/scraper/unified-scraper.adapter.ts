@@ -23,6 +23,7 @@ interface UnifiedRecord {
   source_site?: string;
   source_listing_id?: string | null;
   route_id?: string | null;
+  bus_id?: string | null;
   listingId?: string | null;
   listing_url?: string | null;
   product_page_url?: string | null;
@@ -64,6 +65,8 @@ interface UnifiedRecord {
   fare?: unknown;
   fareAmount?: unknown;
   fare_amount?: unknown;
+  fare_min?: unknown;
+  fare_max?: unknown;
   discount_inr?: unknown;
   discountAmount?: unknown;
   offer_text?: string | null;
@@ -72,6 +75,7 @@ interface UnifiedRecord {
   seats_available?: unknown;
   seats?: unknown;
   seatsLeft?: unknown;
+  available_seats?: unknown;
   availability_text?: string | null;
   availabilityLabel?: string | null;
   rating?: number | null;
@@ -82,6 +86,7 @@ interface UnifiedRecord {
   refundPolicy?: string | null;
   collected_at?: string;
   listings?: UnifiedRecord[];
+  buses?: UnifiedRecord[];
 }
 
 function asLooseRecord(value: unknown): Record<string, unknown> | null {
@@ -109,6 +114,11 @@ function flattenRecords(raw: unknown): UnifiedRecord[] {
       return;
     }
 
+    if (Array.isArray(record.buses) && record.buses.length > 0) {
+      for (const nested of record.buses) visit(nested);
+      return;
+    }
+
     out.push(record);
   };
 
@@ -123,6 +133,7 @@ function flattenRecords(raw: unknown): UnifiedRecord[] {
   if (Array.isArray(obj.records)) visit(obj.records);
   else if (Array.isArray(obj.data)) visit(obj.data);
   else if (Array.isArray(obj.listings)) visit(obj.listings);
+  else if (Array.isArray(obj.buses)) visit(obj.buses);
   else visit(obj);
 
   return out;
@@ -145,6 +156,7 @@ function resolveListingId(item: UnifiedRecord, listingUrl: string | null): strin
   return (
     item.source_listing_id ??
     item.route_id ??
+    item.bus_id ??
     item.listingId ??
     extractServiceKey(listingUrl) ??
     null
@@ -169,6 +181,7 @@ function resolvePrice(item: UnifiedRecord): number | null {
     item.fare,
     item.fareAmount,
     item.fare_amount,
+    item.fare_min,
   ];
 
   for (const candidate of candidates) {
@@ -187,6 +200,7 @@ function resolveBasePrice(item: UnifiedRecord, price: number | null): number | n
     pricing?.original_price,
     item.original_price,
     item.originalFare,
+    item.fare_max,
   ];
 
   for (const candidate of candidates) {
@@ -266,7 +280,10 @@ function resolveSeatsAvailable(item: UnifiedRecord): number | null {
   if (typeof availability?.seats_available === 'number') return availability.seats_available;
   if (typeof item.seatsLeft === 'number') return item.seatsLeft;
   return parseSeatsAvailable(
-    availability?.seats_available ?? item.seats_available ?? item.seats,
+    availability?.seats_available ??
+      item.seats_available ??
+      item.available_seats ??
+      item.seats,
   );
 }
 
@@ -277,14 +294,26 @@ function resolveAvailabilityText(item: UnifiedRecord): string | null {
   if (typeof item.availabilityLabel === 'string') return item.availabilityLabel;
   if (typeof item.seats === 'string') return item.seats;
   if (typeof item.seats_available === 'string') return item.seats_available;
+  if (typeof item.available_seats === 'string') return item.available_seats;
   return null;
 }
 
 function normalizeSourceSite(site: string): string {
   const lower = site.toLowerCase();
   if (lower.includes('redbus')) return 'redbus';
+  if (lower.includes('makemytrip') || lower.includes('mmt')) return 'makemytrip';
   if (lower.includes('abhibus')) return 'abhibus';
   return site;
+}
+
+function resolveRating(item: UnifiedRecord): number | null {
+  if (typeof item.rating === 'number') return item.rating;
+  if (typeof item.userRating === 'number') return item.userRating;
+  if (typeof item.rating === 'string' && item.rating.trim()) {
+    const parsed = Number(item.rating);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 export class UnifiedScraperAdapter implements SourceAdapter<unknown> {
@@ -335,12 +364,7 @@ export class UnifiedScraperAdapter implements SourceAdapter<unknown> {
         (typeof pricingOffer === 'string' ? pricingOffer : null),
       seats_available: resolveSeatsAvailable(item),
       availability_text: resolveAvailabilityText(item),
-      rating:
-        typeof item.rating === 'number'
-          ? item.rating
-          : typeof item.userRating === 'number'
-            ? item.userRating
-            : null,
+      rating: resolveRating(item),
       rating_count:
         typeof item.rating_count === 'number'
           ? item.rating_count

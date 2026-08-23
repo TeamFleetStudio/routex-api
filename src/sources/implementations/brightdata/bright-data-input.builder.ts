@@ -2,13 +2,14 @@ import type { BusSearchRequest } from '../../../types/bus.types.js';
 import type { Env } from '../../../config/env.js';
 import {
   buildAbhiBusSearchUrl,
+  buildMakeMyTripSearchUrl,
   buildRedBusSearchUrl,
   buildSourceSearchUrl,
   resolveCityDisplayName,
 } from './url-builders.js';
 import type { BusSite } from './city-registry.js';
 
-export type BrightDataSite = BusSite;
+export type BrightDataSite = BusSite | 'makemytrip';
 
 export function resolveCollectorId(site: BrightDataSite, env: Env): string {
   switch (site) {
@@ -16,21 +17,23 @@ export function resolveCollectorId(site: BrightDataSite, env: Env): string {
       return env.REDBUS_COLLECTOR_ID;
     case 'abhibus':
       return env.ABHIBUS_COLLECTOR_ID;
+    case 'makemytrip':
+      return env.MAKEMYTRIP_COLLECTOR_ID;
   }
 }
 
 export { buildSourceSearchUrl };
 
 export interface BrightDataCollectorInput {
-  site: BrightDataSite;
+  site?: BrightDataSite;
   url: string;
-  from: string;
-  from_city: string;
-  to: string;
-  to_city: string;
-  date: string;
-  time: string;
-  limit: number;
+  from?: string;
+  from_city?: string;
+  to?: string;
+  to_city?: string;
+  date?: string;
+  time?: string;
+  limit?: number;
   enrich?: string;
 }
 
@@ -39,6 +42,14 @@ export function buildBrightDataInputs(
   search: BusSearchRequest,
   defaultLimit: number,
 ): BrightDataCollectorInput[] {
+  if (site === 'makemytrip') {
+    return [
+      {
+        url: buildMakeMyTripSearchUrl(search.from_city, search.to_city),
+      },
+    ];
+  }
+
   const from = resolveCityDisplayName(search.from_city);
   const to = resolveCityDisplayName(search.to_city);
   const date = search.travel_date;

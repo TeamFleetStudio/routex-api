@@ -28,7 +28,7 @@ export const BUS_SITES: SiteDefinition[] = [
     site: 'redbus',
     label: 'RedBus',
     collectorEnvKey: 'REDBUS_COLLECTOR_ID',
-    defaultCollectorId: 'c_mt45kbsacfoxm1vlm',
+    defaultCollectorId: 'c_mt5kcpdj13nspwzrzd',
     usesNumericCityIds: true,
   },
   {

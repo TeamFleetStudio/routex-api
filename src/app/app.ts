@@ -83,9 +83,8 @@ export async function buildApp(env: Env) {
   const selfHealing = new SelfHealingService(env, locks, health);
 
   const normalization = new NormalizationService();
-  for (const site of ['redbus', 'abhibus'] as const) {
-    normalization.register(UnifiedScraperAdapter.forSite(site));
-  }
+  normalization.register(UnifiedScraperAdapter.forSite('redbus'));
+  normalization.register(UnifiedScraperAdapter.forSite('makemytrip'));
 
   const brightDataFor = (sourceName: string) =>
     new BrightDataClient({
@@ -108,10 +107,10 @@ export async function buildApp(env: Env) {
   );
   registry.registerClient(
     new BrightDataSourceClient(
-      'abhibus',
-      brightDataFor('abhibus'),
-      env.ABHIBUS_COLLECTOR_ID,
-      env.ABHIBUS_RESULT_LIMIT,
+      'makemytrip',
+      brightDataFor('makemytrip'),
+      env.MAKEMYTRIP_COLLECTOR_ID,
+      scraperLimit,
     ),
   );
   await registry.seedDefaultsIfMissing();
