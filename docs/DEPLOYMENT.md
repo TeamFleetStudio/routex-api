@@ -27,6 +27,8 @@ This guide covers production deployment using the included **Dockerfile**.
 | `REDBUS_COLLECTOR_ID` | yes | `c_mt5kcpdj13nspwzrzd` |
 | `MAKEMYTRIP_COLLECTOR_ID` | yes | `c_mt5m1h3uvef2inukz` |
 | `CLEARTrip_COLLECTOR_ID` | yes | `c_mt5mys6i27rezbm6py` |
+| `POST_FIRST_RESULT_WAIT_MS` | no | `0` (instant ACK; scrapes in background) |
+| `POST_HARD_DEADLINE_MS` | no | `2500` (max POST block time — avoid EasyPanel HTML 502) |
 | `LOG_LEVEL` | no | `info` |
 | `RATE_LIMIT_MAX` | no | `100` |
 | `PROVIDER_CACHE_FRESH_MS` | no | `600000` |
@@ -67,8 +69,8 @@ docker compose up --build
 - **Single container** — API only; Redis must be reachable via `REDIS_URL`
 - **No PostgreSQL** — all state in Redis (cache, sessions, rate limits)
 - **Self-healing** uses the Bright Data REST API (`refactor_template` + auto-approve via `resume_automation_job`); requires `BRIGHT_DATA_API_TOKEN` and `SELF_HEALING_CLI_TIMEOUT_SEC` (poll timeout). The local `bdata` CLI heal remains available for dev only.
-- **First search** on a route may take 1–10 minutes (Bright Data scrapers); repeat searches hit Redis cache (~1s)
-- **Progressive search** — POST returns after first provider; poll `GET /searches/:id/status`
+- **Progressive search** — POST returns immediately with `search_id` + `updating_more_results: true`; poll `GET /searches/:id/status` and `/buses`
+- **First search** on a route may take 1–10 minutes in the background (Bright Data); repeat searches hit Redis cache
 
 ## Scaling
 
@@ -89,7 +91,7 @@ See [BACKEND.md](./BACKEND.md) for full endpoint reference, data models, and fro
 | Symptom | Fix |
 |---------|-----|
 | Container exits on start | Check `REDIS_URL` connectivity from container network |
-| `502` gateway (HTML) | Proxy timeout — ensure `POST_FIRST_RESULT_WAIT_MS` ≤ 8000 and redeploy |
+| EasyPanel HTML `502` / “Service is not reachable” | Proxy timed out waiting for POST. Set `POST_FIRST_RESULT_WAIT_MS=0` and `POST_HARD_DEADLINE_MS=2500`, redeploy from `dev`. Optionally raise Traefik/EasyPanel upstream timeout. Confirm `GET /health` returns `{"status":"UP"}` |
 | `SEARCH_FAILED` in JSON | Verify `BRIGHT_DATA_API_TOKEN` and collector IDs |
 | `429` errors | Lower traffic or raise `RATE_LIMIT_MAX` |
 | Stale results | Normal — SWR returns cached data; background refresh runs |

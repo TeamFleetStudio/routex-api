@@ -36,7 +36,7 @@ export class SearchService {
     private readonly filterService: SearchFilterService,
     private readonly searchEvents: SearchEventsService,
     /** Hard ceiling for POST /buses/search (ms). Prevents EasyPanel HTML 502. */
-    private readonly postHardDeadlineMs = 5_000,
+    private readonly postHardDeadlineMs = 2_500,
   ) {}
 
   async search(
@@ -305,8 +305,9 @@ export class SearchService {
       request.travel_date,
       request.depart_after,
     );
-    // Hold long enough to create the session; progressive scrapes continue after release.
-    const token = await this.locks.acquire(lockKey, 120_000);
+    // Hold only long enough to create the session and kick off scrapes.
+    // Provider-level locks cover Bright Data jobs; do not hold this lock for minutes.
+    const token = await this.locks.acquire(lockKey, 30_000);
 
     if (!token) {
       // Another request is starting this route — wait for their session, do not start

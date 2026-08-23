@@ -91,7 +91,7 @@ Start a multi-provider bus search.
 
 HTTP status is always `200` for a valid search. Check `success` / `status` in the body (`SEARCH_FAILED` when all providers failed).
 
-POST returns within ~`POST_FIRST_RESULT_WAIT_MS` (default 8s) so reverse proxies do not time out; poll `/status` while `updating_more_results` is true.
+POST returns immediately with `search_id` (`POST_FIRST_RESULT_WAIT_MS=0`) so reverse proxies do not time out; poll `/status` while `updating_more_results` is true. Hard deadline: `POST_HARD_DEADLINE_MS` (default 2500).
 
 ```json
 {

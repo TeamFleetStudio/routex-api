@@ -60,7 +60,7 @@ const envSchema = z.object({
    */
   POST_FIRST_RESULT_WAIT_MS: z.coerce.number().int().nonnegative().default(0),
   /** Absolute ceiling for the whole POST handler (ms). Soft-return session if hit. */
-  POST_HARD_DEADLINE_MS: z.coerce.number().int().positive().default(5_000),
+  POST_HARD_DEADLINE_MS: z.coerce.number().int().positive().default(2_500),
 });
 
 export type Env = z.infer<typeof envSchema>;

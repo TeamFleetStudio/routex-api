@@ -126,30 +126,42 @@ export class SearchOrchestratorService {
 
     if (options?.waitAll) {
       await progressWork;
-    } else {
-      // Soft deadline: return before reverse-proxy timeouts (EasyPanel ~30–60s).
-      // Cache hits often finish within waitMs; live scrapes continue in background.
-      const waitMs = this.firstResultWaitMs;
-      if (waitMs <= 0) {
-        void progressWork;
-      } else {
-        await Promise.race([firstProviderGate, sleep(waitMs)]);
-        void progressWork;
-        if (!firstProviderDone) {
-          logger.info({
-            event: 'SEARCH_POST_SOFT_RETURN',
-            search_id: searchId,
-            request_id: requestId,
-            waited_ms: waitMs,
-            reason: 'first_provider_still_running',
-          });
-        }
+      const { session } = await this.sessionService.getSession(searchId);
+      if (!session) {
+        throw new Error(`Search session ${searchId} missing after orchestration`);
       }
+      return this.responseFromSession(session, requestId, options?.includeAll);
+    }
+
+    // Instant ACK for EasyPanel/Traefik: do not wait for scrapes or a second Redis GET.
+    // Provider locks cover in-flight Bright Data jobs; session is already persisted.
+    const waitMs = this.firstResultWaitMs;
+    if (waitMs <= 0) {
+      void progressWork;
+      logger.info({
+        event: 'SEARCH_POST_INSTANT_ACK',
+        search_id: searchId,
+        request_id: requestId,
+      });
+      return this.responseFromSession(initialSession, requestId, options?.includeAll);
+    }
+
+    await Promise.race([firstProviderGate, sleep(waitMs)]);
+    void progressWork;
+    if (!firstProviderDone) {
+      logger.info({
+        event: 'SEARCH_POST_SOFT_RETURN',
+        search_id: searchId,
+        request_id: requestId,
+        waited_ms: waitMs,
+        reason: 'first_provider_still_running',
+      });
     }
 
     const { session } = await this.sessionService.getSession(searchId);
     if (!session) {
-      throw new Error(`Search session ${searchId} missing after orchestration`);
+      // Race: soft wait expired before first write completed — still ACK from memory.
+      return this.responseFromSession(initialSession, requestId, options?.includeAll);
     }
 
     return this.responseFromSession(session, requestId, options?.includeAll);
