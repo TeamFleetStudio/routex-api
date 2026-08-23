@@ -1,92 +1,156 @@
 import type { BusSearchRequest } from '../../types/bus.types.js';
 import type { BusSearchResponse } from '../../types/api.types.js';
-import type { CacheService } from '../cache/cache.service.js';
-import type { CachePolicyService } from '../cache/cache-policy.service.js';
 import type { DistributedLockService } from '../cache/distributed-lock.service.js';
+import type { SearchSessionService } from '../cache/search-session.service.js';
+import type { ProviderRefreshScheduler } from '../cache/provider-refresh.scheduler.js';
 import type { SearchOrchestratorService } from './search-orchestrator.service.js';
-import { buildSearchCacheKey, buildSearchLockKey } from '../../utils/cache-key.js';
+import { buildSearchLockKey } from '../../utils/cache-key.js';
+import { paginateResults } from '../../utils/pagination.js';
 import { logger } from '../../utils/logger.js';
 
+export interface SearchOptions {
+  includeAll?: boolean;
+}
+
 export class SearchService {
-  private refreshInFlight = new Set<string>();
+  private sessionRefreshInFlight = new Set<string>();
 
   constructor(
-    private readonly cache: CacheService,
-    private readonly cachePolicy: CachePolicyService,
+    private readonly sessionService: SearchSessionService,
     private readonly locks: DistributedLockService,
     private readonly orchestrator: SearchOrchestratorService,
+    private readonly refreshScheduler: ProviderRefreshScheduler,
   ) {}
 
-  async search(request: BusSearchRequest, requestId: string): Promise<BusSearchResponse> {
-    const cacheKey = buildSearchCacheKey(
-      request.from_city,
-      request.to_city,
-      request.travel_date,
-    );
-    const { entry, freshness } = await this.cache.getSearch(cacheKey);
-
-    if (freshness === 'fresh' && entry) {
-      return {
-        ...entry.data,
-        request_id: requestId,
-        cache: { hit: true, stale: false },
-      };
+  async search(
+    request: BusSearchRequest,
+    requestId: string,
+    options?: SearchOptions,
+  ): Promise<BusSearchResponse> {
+    const existingSearchId = await this.sessionService.getRouteSessionId(request);
+    if (existingSearchId) {
+      const { session, freshness } = await this.sessionService.getSession(existingSearchId);
+      if (session && freshness === 'fresh') {
+        return this.responseFromSession(session, requestId, options?.includeAll, {
+          hit: true,
+          stale: false,
+        });
+      }
+      if (session && freshness === 'stale') {
+        this.triggerSessionRefresh(existingSearchId, request, requestId);
+        return this.responseFromSession(session, requestId, options?.includeAll, {
+          hit: true,
+          stale: true,
+        });
+      }
     }
 
-    if (freshness === 'stale' && entry) {
-      this.triggerBackgroundRefresh(cacheKey, request, requestId);
-      return {
-        ...entry.data,
-        request_id: requestId,
-        cache: { hit: true, stale: true },
-      };
-    }
+    return this.fetchWithLock(request, requestId, options);
+  }
 
-    return this.fetchWithLock(cacheKey, request, requestId, entry?.data ?? null);
+  async getSessionPage(
+    searchId: string,
+    requestId: string,
+    cursor?: string,
+    limit?: number,
+  ): Promise<BusSearchResponse | null> {
+    const { session } = await this.sessionService.getSession(searchId);
+    if (!session) return null;
+
+    const paginated = paginateResults(session.results, { cursor, limit });
+    return {
+      success: session.status !== 'SEARCH_FAILED',
+      status: session.status,
+      request_id: requestId,
+      search_id: session.search_id,
+      sources: session.sources,
+      results: paginated.data,
+      total_buses: session.total_buses,
+      pagination: paginated.pagination,
+      updating_more_results: session.sources.some(
+        (s) => s.cache_status === 'stale' || s.cache_status === 'skipped' || s.status === 'SKIPPED',
+      ),
+      cache: { hit: true, stale: false },
+    };
+  }
+
+  private responseFromSession(
+    session: Awaited<ReturnType<SearchSessionService['getSession']>>['session'] & object,
+    requestId: string,
+    includeAll?: boolean,
+    cache?: { hit: boolean; stale: boolean },
+  ): BusSearchResponse {
+    const paginated = includeAll
+      ? {
+          data: session.results,
+          pagination: {
+            limit: session.results.length,
+            total_items: session.total_buses,
+            has_more: false,
+            next_cursor: null,
+          },
+        }
+      : paginateResults(session.results, {});
+
+    return {
+      success: session.status !== 'SEARCH_FAILED',
+      status: session.status,
+      request_id: requestId,
+      search_id: session.search_id,
+      sources: session.sources,
+      results: paginated.data,
+      total_buses: session.total_buses,
+      pagination: paginated.pagination,
+      updating_more_results: session.sources.some(
+        (s) => s.cache_status === 'stale' || s.cache_status === 'skipped' || s.status === 'SKIPPED',
+      ),
+      cache,
+    };
   }
 
   private async fetchWithLock(
-    cacheKey: string,
     request: BusSearchRequest,
     requestId: string,
-    staleFallback: BusSearchResponse | null,
+    options?: SearchOptions,
   ): Promise<BusSearchResponse> {
     const lockKey = buildSearchLockKey(
       request.from_city,
       request.to_city,
       request.travel_date,
+      request.depart_after,
     );
     const token = await this.locks.acquire(lockKey);
 
     if (!token) {
-      const waited = await this.locks.waitForCache(async () => {
-        const { entry, freshness } = await this.cache.getSearch(cacheKey);
-        if (entry && (freshness === 'fresh' || freshness === 'stale')) {
-          return entry.data;
+      const existingSearchId = await this.sessionService.getRouteSessionId(request);
+      if (existingSearchId) {
+        const { session, freshness } = await this.sessionService.getSession(existingSearchId);
+        if (session && (freshness === 'fresh' || freshness === 'stale')) {
+          return this.responseFromSession(session, requestId, options?.includeAll, {
+            hit: true,
+            stale: freshness === 'stale',
+          });
         }
-        return null;
-      });
-
-      if (waited) {
-        return { ...waited, request_id: requestId, cache: { hit: true, stale: false } };
-      }
-
-      if (staleFallback) {
-        return {
-          ...staleFallback,
-          request_id: requestId,
-          cache: { hit: true, stale: true },
-        };
       }
     }
 
     try {
-      const result = token
-        ? await this.orchestrator.search(request, requestId)
-        : await this.orchestrator.search(request, requestId);
+      if (token) {
+        const existingSearchId = await this.sessionService.getRouteSessionId(request);
+        if (existingSearchId) {
+          const { session, freshness } = await this.sessionService.getSession(existingSearchId);
+          if (session && freshness === 'fresh') {
+            return this.responseFromSession(session, requestId, options?.includeAll, {
+              hit: true,
+              stale: false,
+            });
+          }
+        }
+      }
 
-      const ttl = this.cachePolicy.resolveTtl(request.travel_date);
-      await this.cache.setSearch(cacheKey, result, ttl.freshTtlMs, ttl.staleTtlMs);
+      const result = await this.orchestrator.search(request, requestId, {
+        includeAll: options?.includeAll,
+      });
 
       return {
         ...result,
@@ -99,25 +163,21 @@ export class SearchService {
     }
   }
 
-  private triggerBackgroundRefresh(
-    cacheKey: string,
+  private triggerSessionRefresh(
+    searchId: string,
     request: BusSearchRequest,
     requestId: string,
   ): void {
-    if (this.refreshInFlight.has(cacheKey)) return;
-    this.refreshInFlight.add(cacheKey);
-    logger.info({ event: 'CACHE_REFRESH_STARTED', key: cacheKey });
+    if (this.sessionRefreshInFlight.has(searchId)) return;
+    this.sessionRefreshInFlight.add(searchId);
+    logger.info({ event: 'SESSION_REFRESH_SCHEDULED', search_id: searchId });
 
-    void this.fetchWithLock(cacheKey, request, requestId, null)
-      .catch((err) => {
-        logger.error({
-          event: 'CACHE_REFRESH_FAILED',
-          key: cacheKey,
-          message: err instanceof Error ? err.message : 'unknown',
-        });
-      })
-      .finally(() => {
-        this.refreshInFlight.delete(cacheKey);
-      });
+    this.refreshScheduler.schedule(`session:${searchId}`, async () => {
+      try {
+        await this.orchestrator.refreshSession(searchId, request, requestId);
+      } finally {
+        this.sessionRefreshInFlight.delete(searchId);
+      }
+    });
   }
 }

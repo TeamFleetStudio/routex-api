@@ -14,7 +14,7 @@ describe('cache key generation', () => {
 
   it('builds deterministic search keys', () => {
     expect(buildSearchCacheKey('Chennai', 'Bengaluru', '2026-08-25')).toBe(
-      'routex:search:chennai:bengaluru:2026-08-25',
+      'routex:search:chennai:bengaluru:2026-08-25:any',
     );
   });
 });

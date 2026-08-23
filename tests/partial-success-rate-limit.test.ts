@@ -53,10 +53,19 @@ describe('partial success and total failure', async () => {
       ]),
     };
 
+    const sessionService = {
+      saveSession: vi.fn().mockResolvedValue(undefined),
+      buildSessionTimestamps: vi.fn().mockReturnValue({
+        fresh_until: '2099-01-01T00:10:00.000Z',
+        stale_until: '2099-01-01T00:15:00.000Z',
+      }),
+    };
+
     const orchestrator = new SearchOrchestratorService(
       registry as never,
       executor as never,
       new BusMatchingService(new DefaultMatchingStrategy(new MatchingScoreService())),
+      sessionService as never,
     );
 
     const result = await orchestrator.search(search, 'req_test');
@@ -90,10 +99,19 @@ describe('partial success and total failure', async () => {
       ]),
     };
 
+    const sessionService = {
+      saveSession: vi.fn().mockResolvedValue(undefined),
+      buildSessionTimestamps: vi.fn().mockReturnValue({
+        fresh_until: '2099-01-01T00:10:00.000Z',
+        stale_until: '2099-01-01T00:15:00.000Z',
+      }),
+    };
+
     const orchestrator = new SearchOrchestratorService(
       registry as never,
       executor as never,
       new BusMatchingService(new DefaultMatchingStrategy(new MatchingScoreService())),
+      sessionService as never,
     );
 
     const result = await orchestrator.search(search, 'req_fail');

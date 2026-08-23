@@ -25,6 +25,10 @@ const rawBusSearchBodySchema = z.object({
       message: 'time must be HH:MM or empty',
     }),
   limit: z.coerce.number().int().positive().max(50).optional(),
+  include_all: z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .transform((v) => v === true || v === 'true'),
 });
 
 export const busSearchBodySchema = rawBusSearchBodySchema
@@ -34,6 +38,7 @@ export const busSearchBodySchema = rawBusSearchBodySchema
     travel_date: data.travel_date,
     depart_after: (data.depart_after ?? data.time ?? '').trim(),
     limit: data.limit,
+    include_all: data.include_all ?? false,
   }))
   .superRefine((data, ctx) => {
     if (data.from_city.toLowerCase() === data.to_city.toLowerCase()) {

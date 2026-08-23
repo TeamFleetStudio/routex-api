@@ -1,5 +1,6 @@
 import type { CanonicalBus } from './bus.types.js';
 import type { SourceResultMeta } from './source.types.js';
+import type { PaginationMeta } from '../utils/pagination.js';
 
 export type SearchStatus = 'SUCCESS' | 'PARTIAL_SUCCESS' | 'SEARCH_FAILED';
 
@@ -23,6 +24,9 @@ export interface BusSearchResponse {
   };
   sources: SourceResultMeta[];
   results: CanonicalBus[];
+  total_buses: number;
+  pagination: PaginationMeta;
+  updating_more_results?: boolean;
 }
 
 export interface HealthResponse {

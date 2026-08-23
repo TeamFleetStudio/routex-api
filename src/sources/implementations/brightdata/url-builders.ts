@@ -108,7 +108,7 @@ export function buildMakeMyTripSearchUrl(fromCity: string, toCity: string): stri
 }
 
 export function buildSourceSearchUrl(
-  site: BusSite,
+  site: BusSite | 'makemytrip',
   search: BusSearchRequest,
 ): string {
   const date = search.travel_date;
@@ -118,5 +118,7 @@ export function buildSourceSearchUrl(
       return buildRedBusSearchUrl(search.from_city, search.to_city, date);
     case 'abhibus':
       return buildAbhiBusSearchUrl(search.from_city, search.to_city, date);
+    case 'makemytrip':
+      return buildMakeMyTripSearchUrl(search.from_city, search.to_city);
   }
 }

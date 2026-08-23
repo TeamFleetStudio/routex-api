@@ -6,6 +6,8 @@ export interface BusSearchRequest {
   depart_after?: string;
   /** Max listings per source (overrides env default when set). */
   limit?: number;
+  /** Return all matched buses instead of first page (debug). */
+  include_all?: boolean;
 }
 
 export interface BoardingPoint {

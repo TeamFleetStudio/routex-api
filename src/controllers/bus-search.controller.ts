@@ -13,7 +13,9 @@ export class BusSearchController {
       throw new ValidationError(message);
     }
 
-    const result = await this.searchService.search(parsed.data, request.requestId);
+    const result = await this.searchService.search(parsed.data, request.requestId, {
+      includeAll: parsed.data.include_all,
+    });
     const statusCode = result.status === 'SEARCH_FAILED' ? 502 : 200;
     await reply.status(statusCode).send(result);
   }

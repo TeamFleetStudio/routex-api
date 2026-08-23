@@ -37,6 +37,10 @@ const envSchema = z.object({
   BRIGHT_DATA_SOURCE_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
   SCRAPER_DEFAULT_LIMIT: z.coerce.number().int().positive().default(10),
   ABHIBUS_RESULT_LIMIT: z.coerce.number().int().positive().default(10),
+  PROVIDER_CACHE_FRESH_MS: z.coerce.number().int().positive().default(600_000),
+  PROVIDER_CACHE_STALE_MS: z.coerce.number().int().positive().default(900_000),
+  PROVIDER_RETRY_COOLDOWN_MS: z.coerce.number().int().positive().default(900_000),
+  DEFAULT_PAGE_LIMIT: z.coerce.number().int().positive().default(20),
 });
 
 export type Env = z.infer<typeof envSchema>;

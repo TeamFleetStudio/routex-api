@@ -66,4 +66,5 @@ export interface SourceResultMeta {
   message?: string;
   duration_ms: number;
   healing_attempted?: boolean;
+  cache_status?: 'fresh' | 'stale' | 'miss' | 'skipped';
 }

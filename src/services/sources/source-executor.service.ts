@@ -7,12 +7,24 @@ import type { RetryService } from '../resilience/retry.service.js';
 import type { SourceHealthService } from './source-health.service.js';
 import type { NormalizationService } from '../normalization/normalization.service.js';
 import type { SelfHealingService } from '../self-healing/self-healing.service.js';
+import type { ProviderCacheService } from '../cache/provider-cache.service.js';
+import type { DistributedLockService } from '../cache/distributed-lock.service.js';
+import type { ProviderRefreshScheduler } from '../cache/provider-refresh.scheduler.js';
 import { SourceTimeoutError } from '../../errors/index.js';
+import {
+  buildProviderCacheKey,
+  buildProviderLockKey,
+} from '../../utils/cache-key.js';
 import { logger } from '../../utils/logger.js';
 
 export interface SourceExecutionResult {
   meta: SourceResultMeta;
   listings: NormalizedBusListing[];
+}
+
+export interface SourceExecutionOptions {
+  forceLive?: boolean;
+  onProviderRefreshed?: (result: SourceExecutionResult) => void;
 }
 
 export class SourceExecutorService {
@@ -23,14 +35,18 @@ export class SourceExecutorService {
     private readonly health: SourceHealthService,
     private readonly normalization: NormalizationService,
     private readonly selfHealing: SelfHealingService,
+    private readonly providerCache: ProviderCacheService,
+    private readonly locks: DistributedLockService,
+    private readonly refreshScheduler: ProviderRefreshScheduler,
   ) {}
 
   async executeAll(
     sources: Array<{ config: SourceConfig; client: BusSourceClient }>,
     search: BusSearchRequest,
+    options?: SourceExecutionOptions,
   ): Promise<SourceExecutionResult[]> {
     const settled = await Promise.allSettled(
-      sources.map((s) => this.executeOne(s.config, s.client, search)),
+      sources.map((s) => this.executeOne(s.config, s.client, search, options)),
     );
 
     return settled.map((result, index) => {
@@ -44,36 +60,234 @@ export class SourceExecutorService {
           failure_kind: classified.kind,
           message: classified.message,
           duration_ms: 0,
+          cache_status: 'miss',
         },
         listings: [],
       };
     });
   }
 
-  private async executeOne(
+  async executeOne(
     config: SourceConfig,
     client: BusSourceClient,
     search: BusSearchRequest,
+    options?: SourceExecutionOptions,
   ): Promise<SourceExecutionResult> {
     const started = Date.now();
     const source = config.name;
+    const cacheKey = buildProviderCacheKey(
+      source,
+      search.from_city,
+      search.to_city,
+      search.travel_date,
+      search.depart_after,
+    );
 
-    const allowed = await this.circuitBreaker.allowRequest(source);
-    if (!allowed) {
-      logger.info({ event: 'SOURCE_FAILED', source, reason: 'circuit_open' });
+    if (!options?.forceLive) {
+      const cached = await this.tryServeFromCache(
+        config,
+        client,
+        search,
+        cacheKey,
+        started,
+        options,
+      );
+      if (cached) return cached;
+    }
+
+    return this.fetchLiveWithLock(config, client, search, cacheKey, started, options);
+  }
+
+  private async tryServeFromCache(
+    config: SourceConfig,
+    client: BusSourceClient,
+    search: BusSearchRequest,
+    cacheKey: string,
+    started: number,
+    options?: SourceExecutionOptions,
+  ): Promise<SourceExecutionResult | null> {
+    const source = config.name;
+    const { entry, freshness } = await this.providerCache.getProvider(cacheKey);
+
+    if (!entry) return null;
+
+    if (entry.status === 'failed' && this.providerCache.isInRetryCooldown(entry)) {
+      if (entry.listings.length > 0) {
+        return {
+          meta: {
+            source,
+            status: 'SUCCESS',
+            duration_ms: Date.now() - started,
+            cache_status: 'stale',
+            message: entry.message,
+          },
+          listings: entry.listings,
+        };
+      }
       return {
         meta: {
           source,
-          status: 'CIRCUIT_OPEN',
-          failure_kind: 'UNKNOWN',
-          message: 'Circuit breaker open',
+          status: 'SKIPPED',
+          failure_kind: entry.failure_kind,
+          message: entry.message ?? 'Provider in retry cooldown',
           duration_ms: Date.now() - started,
+          cache_status: 'skipped',
         },
         listings: [],
       };
     }
 
-    logger.info({ event: 'SOURCE_STARTED', source });
+    if (freshness === 'fresh' && entry.status === 'success') {
+      return {
+        meta: {
+          source,
+          status: 'SUCCESS',
+          duration_ms: Date.now() - started,
+          cache_status: 'fresh',
+        },
+        listings: entry.listings,
+      };
+    }
+
+    if (freshness === 'stale' && entry.listings.length > 0) {
+      this.scheduleProviderRefresh(config, client, search, cacheKey, options);
+      return {
+        meta: {
+          source,
+          status: 'SUCCESS',
+          duration_ms: Date.now() - started,
+          cache_status: 'stale',
+        },
+        listings: entry.listings,
+      };
+    }
+
+    return null;
+  }
+
+  private scheduleProviderRefresh(
+    config: SourceConfig,
+    client: BusSourceClient,
+    search: BusSearchRequest,
+    cacheKey: string,
+    options?: SourceExecutionOptions,
+  ): void {
+    this.refreshScheduler.schedule(cacheKey, async () => {
+      await this.executeOne(config, client, search, {
+        forceLive: true,
+        onProviderRefreshed: options?.onProviderRefreshed,
+      });
+    });
+  }
+
+  private async fetchLiveWithLock(
+    config: SourceConfig,
+    client: BusSourceClient,
+    search: BusSearchRequest,
+    cacheKey: string,
+    started: number,
+    options?: SourceExecutionOptions,
+  ): Promise<SourceExecutionResult> {
+    const source = config.name;
+    const lockKey = buildProviderLockKey(
+      source,
+      search.from_city,
+      search.to_city,
+      search.travel_date,
+      search.depart_after,
+    );
+    const token = await this.locks.acquire(lockKey);
+
+    if (!token) {
+      const { entry } = await this.providerCache.getProvider(cacheKey);
+      if (entry && entry.listings.length > 0) {
+        return {
+          meta: {
+            source,
+            status: 'SUCCESS',
+            duration_ms: Date.now() - started,
+            cache_status: 'stale',
+          },
+          listings: entry.listings,
+        };
+      }
+    }
+
+    try {
+      if (!options?.forceLive) {
+        const cached = await this.tryServeFromCache(
+          config,
+          client,
+          search,
+          cacheKey,
+          started,
+          options,
+        );
+        if (cached) return cached;
+      }
+
+      const result = await this.fetchLive(config, client, search, started);
+      await this.providerCache.setProviderSuccess(cacheKey, source, result.listings);
+      options?.onProviderRefreshed?.(result);
+      return { ...result, meta: { ...result.meta, cache_status: 'miss' } };
+    } catch (err) {
+      const classified = this.classifier.classify(err);
+      const { entry } = await this.providerCache.getProvider(cacheKey);
+      await this.providerCache.setProviderFailure(
+        cacheKey,
+        source,
+        { failure_kind: classified.kind, message: classified.message },
+        entry?.listings ?? [],
+      );
+
+      if (entry && entry.listings.length > 0) {
+        return {
+          meta: {
+            source,
+            status: 'SUCCESS',
+            failure_kind: classified.kind,
+            message: classified.message,
+            duration_ms: Date.now() - started,
+            cache_status: 'stale',
+          },
+          listings: entry.listings,
+        };
+      }
+
+      const status = classified.kind === 'TIMEOUT' ? 'TIMEOUT' : 'FAILED';
+      return {
+        meta: {
+          source,
+          status,
+          failure_kind: classified.kind,
+          message: classified.message,
+          duration_ms: Date.now() - started,
+          cache_status: 'miss',
+        },
+        listings: [],
+      };
+    } finally {
+      if (token) {
+        await this.locks.release(lockKey, token);
+      }
+    }
+  }
+
+  private async fetchLive(
+    config: SourceConfig,
+    client: BusSourceClient,
+    search: BusSearchRequest,
+    started: number,
+  ): Promise<SourceExecutionResult> {
+    const source = config.name;
+
+    const allowed = await this.circuitBreaker.allowRequest(source);
+    if (!allowed) {
+      logger.info({ event: 'SOURCE_FAILED', source, reason: 'circuit_open' });
+      throw new SourceTimeoutError(source);
+    }
+
+    logger.info({ event: 'SOURCE_STARTED', source, phase: 'live_fetch' });
 
     try {
       const listings = await this.retry.execute(
@@ -166,17 +380,7 @@ export class SourceExecutorService {
         healing_attempted: healingAttempted,
       });
 
-      return {
-        meta: {
-          source,
-          status,
-          failure_kind: classified.kind,
-          message: classified.message,
-          duration_ms: Date.now() - started,
-          healing_attempted: healingAttempted,
-        },
-        listings: [],
-      };
+      throw err;
     }
   }
 

@@ -8,9 +8,11 @@ import { createRateLimitPlugin } from '../middleware/rate-limit.middleware.js';
 import { createHealthRoutes } from '../routes/health.routes.js';
 import { createBusRoutes } from '../routes/bus.routes.js';
 import { BusSearchController } from '../controllers/bus-search.controller.js';
-import { CacheService } from '../services/cache/cache.service.js';
-import { CachePolicyService } from '../services/cache/cache-policy.service.js';
+import { SearchPaginationController } from '../controllers/search-pagination.controller.js';
 import { DistributedLockService } from '../services/cache/distributed-lock.service.js';
+import { ProviderCacheService } from '../services/cache/provider-cache.service.js';
+import { SearchSessionService } from '../services/cache/search-session.service.js';
+import { ProviderRefreshScheduler } from '../services/cache/provider-refresh.scheduler.js';
 import { FailureClassifierService } from '../services/resilience/failure-classifier.service.js';
 import { RetryService } from '../services/resilience/retry.service.js';
 import { CircuitBreakerService } from '../services/resilience/circuit-breaker.service.js';
@@ -63,14 +65,15 @@ export async function buildApp(env: Env) {
   await app.register(requestContextPlugin);
   await app.register(createRateLimitPlugin({ redis, env }));
 
-  const cache = new CacheService(redis);
-  const cachePolicy = new CachePolicyService(env.STALE_MULTIPLIER);
   const locks = new DistributedLockService(
     redis,
     env.LOCK_TTL_MS,
     env.LOCK_WAIT_MS,
     env.LOCK_POLL_MS,
   );
+  const providerCache = new ProviderCacheService(redis, env);
+  const sessionService = new SearchSessionService(redis, env);
+  const refreshScheduler = new ProviderRefreshScheduler();
 
   const classifier = new FailureClassifierService();
   const retry = new RetryService(classifier);
@@ -122,16 +125,20 @@ export async function buildApp(env: Env) {
     health,
     normalization,
     selfHealing,
+    providerCache,
+    locks,
+    refreshScheduler,
   );
 
   const matchingScore = new MatchingScoreService();
   const matching = new BusMatchingService(new DefaultMatchingStrategy(matchingScore));
-  const orchestrator = new SearchOrchestratorService(registry, executor, matching);
-  const searchService = new SearchService(cache, cachePolicy, locks, orchestrator);
+  const orchestrator = new SearchOrchestratorService(registry, executor, matching, sessionService);
+  const searchService = new SearchService(sessionService, locks, orchestrator, refreshScheduler);
   const controller = new BusSearchController(searchService);
+  const paginationController = new SearchPaginationController(searchService);
 
   await app.register(createHealthRoutes(redis));
-  await app.register(createBusRoutes(controller));
+  await app.register(createBusRoutes(controller, paginationController));
 
   return { app, redis, env };
 }

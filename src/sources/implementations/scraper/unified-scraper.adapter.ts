@@ -78,7 +78,7 @@ interface UnifiedRecord {
   available_seats?: unknown;
   availability_text?: string | null;
   availabilityLabel?: string | null;
-  rating?: number | null;
+  rating?: number | string | null;
   rating_count?: number | null;
   reviewCount?: number | null;
   userRating?: number | null;
