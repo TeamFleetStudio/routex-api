@@ -66,7 +66,7 @@ docker compose up --build
 
 - **Single container** — API only; Redis must be reachable via `REDIS_URL`
 - **No PostgreSQL** — all state in Redis (cache, sessions, rate limits)
-- **Self-healing** (`bdata` CLI) is **not available** inside the container; scraper failures use retry + circuit breaker only
+- **Self-healing** uses the Bright Data REST API (`refactor_template` + auto-approve via `resume_automation_job`); requires `BRIGHT_DATA_API_TOKEN` and `SELF_HEALING_CLI_TIMEOUT_SEC` (poll timeout). The local `bdata` CLI heal remains available for dev only.
 - **First search** on a route may take 1–10 minutes (Bright Data scrapers); repeat searches hit Redis cache (~1s)
 - **Progressive search** — POST returns after first provider; poll `GET /searches/:id/status`
 

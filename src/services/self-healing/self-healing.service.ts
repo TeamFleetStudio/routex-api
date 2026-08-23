@@ -9,10 +9,8 @@ import {
   resolveCollectorId,
   type BrightDataSite,
 } from '../../sources/implementations/brightdata/bright-data-input.builder.js';
-import {
-  isBrightDataSource,
-  runBrightDataScraperHeal,
-} from './bright-data-cli-heal.service.js';
+import { runBrightDataApiHeal } from './bright-data-api-heal.service.js';
+import { isBrightDataSource } from './bright-data-heal.util.js';
 
 export interface HealingContext {
   search: BusSearchRequest;
@@ -51,7 +49,7 @@ export class SelfHealingService {
       });
 
       if (isBrightDataSource(source) && context?.search) {
-        return await this.healViaBrightDataCli(source, context);
+        return await this.healViaBrightDataApi(source, context);
       }
 
       logger.info({
@@ -73,12 +71,12 @@ export class SelfHealingService {
     }
   }
 
-  private async healViaBrightDataCli(
+  private async healViaBrightDataApi(
     source: string,
     context: HealingContext,
   ): Promise<boolean> {
     const collectorId = resolveCollectorId(source as BrightDataSite, this.env);
-    const result = await runBrightDataScraperHeal(this.env, {
+    const result = await runBrightDataApiHeal(this.env, {
       source,
       collectorId,
       search: context.search,
@@ -90,12 +88,17 @@ export class SelfHealingService {
       logger.info({
         event: 'SELF_HEALING_SUCCESS',
         source,
-        mode: 'brightdata_cli',
-        output_path: result.outputPath,
+        mode: 'brightdata_api',
       });
       return true;
     }
 
+    logger.error({
+      event: 'SELF_HEALING_FAILED',
+      source,
+      mode: 'brightdata_api',
+      message: result.message,
+    });
     await this.health.recordFailure(source, context.failure_kind);
     return false;
   }

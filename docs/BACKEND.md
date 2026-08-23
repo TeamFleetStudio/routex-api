@@ -592,12 +592,11 @@ When a live provider fetch fails and `self_healing_enabled: true`:
 1. Classify failure (skip if INVALID_REQUEST)
 2. Acquire routex:lock:healing:{source} (60s TTL)
 3. Mark source health as HEALING
-4. Run Bright Data CLI heal:
-     bdata scraper heal <collector_id> "<failure description>" \
-       --url "<search page url>" \
-       --auto-approve --auto-save \
-       --timeout 1800 \
-       -o output/{source}-heal.json
+4. Run Bright Data REST heal:
+     POST /dca/collectors/{collector_id}/refactor_template
+       { prompt, custom_input: [{ url: "<search page url>" }] }
+     Poll GET .../refactor_template/progress
+     On pending_answer → POST .../resume_automation_job { message: true, auto_save: true }
 5. If heal succeeds → retry live fetch once
 6. Release lock
 ```
@@ -606,7 +605,7 @@ When a live provider fetch fails and `self_healing_enabled: true`:
 
 **When it runs:** Only on **live fetch failures**, not on cache hits.
 
-**Sources with healing:** `redbus`, `makemytrip` (Bright Data collectors).
+**Sources with healing:** `redbus`, `makemytrip`, `cleartrip` (Bright Data collectors).
 
 **Non-healable:** `INVALID_REQUEST` (bad city/date — user error, not scraper bug).
 
@@ -676,7 +675,7 @@ All errors return:
 | `BRIGHT_DATA_SOURCE_TIMEOUT_MS` | `300000` | 5 min outer timeout |
 | `CIRCUIT_FAILURE_THRESHOLD` | `5` | Failures before circuit opens |
 | `CIRCUIT_COOLDOWN_MS` | `30000` | Circuit open duration |
-| `SELF_HEALING_CLI_TIMEOUT_SEC` | `1800` | CLI heal timeout |
+| `SELF_HEALING_CLI_TIMEOUT_SEC` | `1800` | Self-heal poll timeout (API or CLI) |
 
 ---
 
