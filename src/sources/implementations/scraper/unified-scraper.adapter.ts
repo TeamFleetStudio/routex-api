@@ -1,6 +1,7 @@
 import type { BusSearchRequest, NormalizedBusListing } from '../../../types/bus.types.js';
 import { emptyNormalizedListing } from '../../../types/bus.types.js';
 import type { SourceAdapter } from '../../contracts/source-adapter.interface.js';
+import { buildFallbackListingUrl } from './listing-url-builder.js';
 import {
   cleanOperatorName,
   extractPriceValue,
@@ -27,7 +28,12 @@ interface UnifiedRecord {
   listingId?: string | null;
   listing_url?: string | null;
   product_page_url?: string | null;
+  booking_url?: string | null;
+  deep_link?: string | null;
+  link?: string | null;
+  href?: string | null;
   url?: string | null;
+  input?: { url?: string | null };
   search?: BusSearchRequest & { depart_after?: string | null };
   operator_name?: string | null;
   operator?: string | null;
@@ -100,26 +106,36 @@ function asUnifiedRecord(value: unknown): UnifiedRecord | null {
 function flattenRecords(raw: unknown): UnifiedRecord[] {
   const out: UnifiedRecord[] = [];
 
-  const visit = (value: unknown): void => {
+  const visit = (value: unknown, parentSearchUrl?: string | null): void => {
     if (Array.isArray(value)) {
-      for (const item of value) visit(item);
+      for (const item of value) visit(item, parentSearchUrl);
       return;
     }
 
     const record = asUnifiedRecord(value);
     if (!record) return;
 
+    const recordInput = asLooseRecord(record.input);
+    const recordSearchUrl =
+      typeof recordInput?.url === 'string' && recordInput.url.trim()
+        ? recordInput.url.trim()
+        : parentSearchUrl ?? null;
+
     if (Array.isArray(record.listings) && record.listings.length > 0) {
-      for (const nested of record.listings) visit(nested);
+      for (const nested of record.listings) visit(nested, recordSearchUrl);
       return;
     }
 
     if (Array.isArray(record.buses) && record.buses.length > 0) {
-      for (const nested of record.buses) visit(nested);
+      for (const nested of record.buses) visit(nested, recordSearchUrl);
       return;
     }
 
-    out.push(record);
+    out.push(
+      recordSearchUrl && !record.input
+        ? { ...record, input: { url: recordSearchUrl } }
+        : record,
+    );
   };
 
   if (Array.isArray(raw)) {
@@ -149,7 +165,28 @@ function extractServiceKey(url: string | null | undefined): string | null {
 }
 
 function resolveListingUrl(item: UnifiedRecord): string | null {
-  return item.listing_url ?? item.product_page_url ?? item.url ?? null;
+  const candidates = [
+    item.listing_url,
+    item.product_page_url,
+    item.booking_url,
+    item.deep_link,
+    item.link,
+    item.href,
+    item.url,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().startsWith('http')) {
+      return candidate.trim();
+    }
+  }
+
+  return null;
+}
+
+function resolveParentSearchUrl(item: UnifiedRecord): string | null {
+  const url = item.input?.url;
+  return typeof url === 'string' && url.trim().startsWith('http') ? url.trim() : null;
 }
 
 function resolveListingId(item: UnifiedRecord, listingUrl: string | null): string | null {
@@ -330,7 +367,16 @@ export class UnifiedScraperAdapter implements SourceAdapter<unknown> {
 
   private mapRecord(item: UnifiedRecord, search: BusSearchRequest): NormalizedBusListing {
     const base = emptyNormalizedListing(this.sourceName, search);
-    const listingUrl = resolveListingUrl(item);
+    const scrapedUrl = resolveListingUrl(item);
+    const listingId = resolveListingId(item, scrapedUrl);
+    const listingUrl =
+      scrapedUrl ??
+      buildFallbackListingUrl(
+        this.sourceName,
+        search,
+        listingId,
+        resolveParentSearchUrl(item),
+      );
     const departureTime = normalizeTimeTo24h(
       item.departure_time ?? item.startTime,
     );

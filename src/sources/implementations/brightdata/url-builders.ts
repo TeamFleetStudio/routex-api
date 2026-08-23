@@ -113,6 +113,38 @@ export function buildClearTripSearchUrl(fromCity: string, toCity: string): strin
   return `https://www.cleartrip.com/bus-tickets/${fromSlug}-to-${toSlug}/`;
 }
 
+/** Route search URL with travel date (Cleartrip expects dd/mm/yyyy). */
+export function buildClearTripListingUrl(
+  fromCity: string,
+  toCity: string,
+  travelDate: string,
+): string {
+  const base = buildClearTripSearchUrl(fromCity, toCity);
+  const [y, m, d] = travelDate.split('-');
+  const url = new URL(base);
+  url.searchParams.set('departureDate', `${d}/${m}/${y}`);
+  return url.toString();
+}
+
+/** MMT route page; appends serviceKey when a real bus/service id is known. */
+export function buildMakeMyTripListingUrl(
+  fromCity: string,
+  toCity: string,
+  serviceKey?: string | null,
+): string {
+  const base = buildMakeMyTripSearchUrl(fromCity, toCity);
+  if (serviceKey && isLikelyServiceKey(serviceKey)) {
+    const url = new URL(base);
+    url.searchParams.set('serviceKey', serviceKey);
+    return url.toString();
+  }
+  return base;
+}
+
+function isLikelyServiceKey(value: string): boolean {
+  return /^\d{4,}$/.test(value.trim());
+}
+
 export function buildSourceSearchUrl(
   site: BusSite | 'makemytrip' | 'cleartrip',
   search: BusSearchRequest,
