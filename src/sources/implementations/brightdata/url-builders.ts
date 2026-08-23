@@ -107,8 +107,14 @@ export function buildMakeMyTripSearchUrl(fromCity: string, toCity: string): stri
   return `https://www.makemytrip.com/bus-tickets/${fromSlug}-${toSlug}-bus-ticket-booking.html`;
 }
 
+export function buildClearTripSearchUrl(fromCity: string, toCity: string): string {
+  const fromSlug = slugifyCityForPath(fromCity);
+  const toSlug = slugifyCityForPath(toCity);
+  return `https://www.cleartrip.com/bus-tickets/${fromSlug}-to-${toSlug}/`;
+}
+
 export function buildSourceSearchUrl(
-  site: BusSite | 'makemytrip',
+  site: BusSite | 'makemytrip' | 'cleartrip',
   search: BusSearchRequest,
 ): string {
   const date = search.travel_date;
@@ -120,5 +126,7 @@ export function buildSourceSearchUrl(
       return buildAbhiBusSearchUrl(search.from_city, search.to_city, date);
     case 'makemytrip':
       return buildMakeMyTripSearchUrl(search.from_city, search.to_city);
+    case 'cleartrip':
+      return buildClearTripSearchUrl(search.from_city, search.to_city);
   }
 }

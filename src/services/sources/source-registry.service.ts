@@ -4,7 +4,7 @@ import type { SourceConfig } from '../../types/source.types.js';
 import { SOURCES_CONFIG_KEY } from '../../utils/cache-key.js';
 import type { BusSourceClient } from '../../sources/contracts/bus-source-client.interface.js';
 
-const BRIGHT_DATA_SOURCES = new Set(['redbus', 'makemytrip']);
+const BRIGHT_DATA_SOURCES = new Set(['redbus', 'makemytrip', 'cleartrip']);
 const REMOVED_SOURCES = new Set(['goibibo', 'ixigo', 'abhibus']);
 
 export class SourceRegistryService {
@@ -51,6 +51,15 @@ export class SourceRegistryService {
         timeout_ms: brightTimeout,
         retry_count: retry,
         priority: 2,
+        self_healing_enabled: true,
+      },
+      {
+        name: 'cleartrip',
+        enabled: true,
+        base_url: brightBase,
+        timeout_ms: brightTimeout,
+        retry_count: retry,
+        priority: 3,
         self_healing_enabled: true,
       },
     ];

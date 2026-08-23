@@ -2,6 +2,7 @@ import type { BusSearchRequest } from '../../../types/bus.types.js';
 import type { Env } from '../../../config/env.js';
 import {
   buildAbhiBusSearchUrl,
+  buildClearTripSearchUrl,
   buildMakeMyTripSearchUrl,
   buildRedBusSearchUrl,
   buildSourceSearchUrl,
@@ -9,7 +10,7 @@ import {
 } from './url-builders.js';
 import type { BusSite } from './city-registry.js';
 
-export type BrightDataSite = BusSite | 'makemytrip';
+export type BrightDataSite = BusSite | 'makemytrip' | 'cleartrip';
 
 export function resolveCollectorId(site: BrightDataSite, env: Env): string {
   switch (site) {
@@ -19,6 +20,8 @@ export function resolveCollectorId(site: BrightDataSite, env: Env): string {
       return env.ABHIBUS_COLLECTOR_ID;
     case 'makemytrip':
       return env.MAKEMYTRIP_COLLECTOR_ID;
+    case 'cleartrip':
+      return env.CLEARTrip_COLLECTOR_ID;
   }
 }
 
@@ -46,6 +49,14 @@ export function buildBrightDataInputs(
     return [
       {
         url: buildMakeMyTripSearchUrl(search.from_city, search.to_city),
+      },
+    ];
+  }
+
+  if (site === 'cleartrip') {
+    return [
+      {
+        url: buildClearTripSearchUrl(search.from_city, search.to_city),
       },
     ];
   }

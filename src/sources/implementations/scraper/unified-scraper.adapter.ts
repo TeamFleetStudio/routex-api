@@ -302,6 +302,7 @@ function normalizeSourceSite(site: string): string {
   const lower = site.toLowerCase();
   if (lower.includes('redbus')) return 'redbus';
   if (lower.includes('makemytrip') || lower.includes('mmt')) return 'makemytrip';
+  if (lower.includes('cleartrip')) return 'cleartrip';
   if (lower.includes('abhibus')) return 'abhibus';
   return site;
 }

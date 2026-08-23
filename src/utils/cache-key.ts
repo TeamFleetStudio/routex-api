@@ -93,3 +93,7 @@ export function buildCircuitKey(source: string): string {
 export function buildHealingLockKey(source: string): string {
   return `routex:lock:healing:${source}`;
 }
+
+export function buildProviderAnalyticsKey(provider: string): string {
+  return `routex:analytics:provider:${provider}`;
+}

@@ -6,15 +6,21 @@ import type { SearchService } from '../services/search/search.service.js';
 export class BusSearchController {
   constructor(private readonly searchService: SearchService) {}
 
-  async search(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  async search(
+    request: FastifyRequest<{ Querystring: { wait?: string } }>,
+    reply: FastifyReply,
+  ): Promise<void> {
     const parsed = busSearchBodySchema.safeParse(request.body);
     if (!parsed.success) {
       const message = parsed.error.issues.map((i) => i.message).join('; ');
       throw new ValidationError(message);
     }
 
+    const waitAll = request.query.wait === 'all';
+
     const result = await this.searchService.search(parsed.data, request.requestId, {
       includeAll: parsed.data.include_all,
+      waitAll,
     });
     const statusCode = result.status === 'SEARCH_FAILED' ? 502 : 200;
     await reply.status(statusCode).send(result);

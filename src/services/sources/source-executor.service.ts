@@ -10,6 +10,7 @@ import type { SelfHealingService } from '../self-healing/self-healing.service.js
 import type { ProviderCacheService } from '../cache/provider-cache.service.js';
 import type { DistributedLockService } from '../cache/distributed-lock.service.js';
 import type { ProviderRefreshScheduler } from '../cache/provider-refresh.scheduler.js';
+import type { ProviderAnalyticsService } from '../analytics/provider-analytics.service.js';
 import { SourceTimeoutError } from '../../errors/index.js';
 import {
   buildProviderCacheKey,
@@ -38,6 +39,7 @@ export class SourceExecutorService {
     private readonly providerCache: ProviderCacheService,
     private readonly locks: DistributedLockService,
     private readonly refreshScheduler: ProviderRefreshScheduler,
+    private readonly analytics?: ProviderAnalyticsService,
   ) {}
 
   async executeAll(
@@ -59,6 +61,56 @@ export class SourceExecutorService {
           status: classified.kind === 'TIMEOUT' ? 'TIMEOUT' : 'FAILED',
           failure_kind: classified.kind,
           message: classified.message,
+          duration_ms: 0,
+          cache_status: 'miss',
+        },
+        listings: [],
+      };
+    });
+  }
+
+  async executeAllWithProgress(
+    sources: Array<{ config: SourceConfig; client: BusSourceClient }>,
+    search: BusSearchRequest,
+    onProviderComplete: (result: SourceExecutionResult) => Promise<void>,
+    options?: SourceExecutionOptions,
+  ): Promise<SourceExecutionResult[]> {
+    const results: SourceExecutionResult[] = new Array(sources.length);
+
+    await Promise.allSettled(
+      sources.map((s, index) =>
+        this.executeOne(s.config, s.client, search, options)
+          .then(async (result) => {
+            results[index] = result;
+            await onProviderComplete(result);
+          })
+          .catch(async (err) => {
+            const classified = this.classifier.classify(err);
+            const result: SourceExecutionResult = {
+              meta: {
+                source: s.config.name,
+                status: classified.kind === 'TIMEOUT' ? 'TIMEOUT' : 'FAILED',
+                failure_kind: classified.kind,
+                message: classified.message,
+                duration_ms: 0,
+                cache_status: 'miss',
+              },
+              listings: [],
+            };
+            results[index] = result;
+            await onProviderComplete(result);
+          }),
+      ),
+    );
+
+    return results.map((result, index) => {
+      if (result) return result;
+      const source = sources[index].config.name;
+      return {
+        meta: {
+          source,
+          status: 'FAILED',
+          message: 'Provider did not return a result',
           duration_ms: 0,
           cache_status: 'miss',
         },
@@ -228,10 +280,13 @@ export class SourceExecutorService {
 
       const result = await this.fetchLive(config, client, search, started);
       await this.providerCache.setProviderSuccess(cacheKey, source, result.listings);
+      void this.analytics?.recordSuccess(source, result.meta.duration_ms);
       options?.onProviderRefreshed?.(result);
       return { ...result, meta: { ...result.meta, cache_status: 'miss' } };
     } catch (err) {
       const classified = this.classifier.classify(err);
+      const durationMs = Date.now() - started;
+      void this.analytics?.recordFailure(source, durationMs);
       const { entry } = await this.providerCache.getProvider(cacheKey);
       await this.providerCache.setProviderFailure(
         cacheKey,

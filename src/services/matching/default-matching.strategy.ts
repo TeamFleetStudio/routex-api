@@ -153,7 +153,15 @@ export class DefaultMatchingStrategy implements MatchingStrategy {
       shortestDuration,
     );
 
-    return {
+    const platformCount = offers.length;
+    const prices = offers
+      .map((o) => o.price_inr)
+      .filter((p): p is number => p != null);
+    const saveUpTo =
+      prices.length >= 2 ? Number((Math.max(...prices) - Math.min(...prices)).toFixed(2)) : null;
+    const bestDealLabel = this.resolveBestDealLabel(dealScore, cheapestPrice, globalCheapest);
+
+    const draft: CanonicalBus = {
       canonical_bus_id: `bus_${shortHash(key)}`,
       match_tier: group.length > 1 ? 'same' : 'unique',
       match_confidence: Number(confidence.toFixed(1)),
@@ -167,10 +175,72 @@ export class DefaultMatchingStrategy implements MatchingStrategy {
       cheapest_price_inr: cheapestPrice,
       cheapest_provider: cheapestListing?.source_site ?? null,
       deal_score: Number(dealScore.toFixed(1)),
+      platform_count: platformCount,
+      save_up_to_inr: saveUpTo,
+      best_deal_label: bestDealLabel,
+      deal_reasons: [],
       offers,
       similar_alternatives: [],
       listings: group,
     };
+
+    draft.deal_reasons = this.buildDealReasons(draft, shortestDuration);
+    return draft;
+  }
+
+  private resolveBestDealLabel(
+    dealScore: number,
+    cheapestInGroup: number | null,
+    globalCheapest: number | null,
+  ): CanonicalBus['best_deal_label'] {
+    if (dealScore >= 85) return 'Best Deal';
+    if (
+      cheapestInGroup != null &&
+      globalCheapest != null &&
+      cheapestInGroup <= globalCheapest
+    ) {
+      return 'Cheapest';
+    }
+    return null;
+  }
+
+  buildDealReasons(
+    canonical: CanonicalBus,
+    shortestDuration: number | null,
+  ): string[] {
+    const reasons: string[] = [];
+
+    if (canonical.save_up_to_inr != null && canonical.save_up_to_inr > 0) {
+      reasons.push(`₹${Math.round(canonical.save_up_to_inr)} cheaper than other platforms`);
+    }
+
+    if (canonical.platform_count >= 2) {
+      reasons.push(`Available on ${canonical.platform_count} platforms`);
+    }
+
+    const primary = canonical.listings[0];
+    if (
+      canonical.duration_minutes != null &&
+      shortestDuration != null &&
+      canonical.duration_minutes === shortestDuration
+    ) {
+      reasons.push('Fastest route among results');
+    }
+
+    if (primary?.rating != null && primary.rating >= 4) {
+      reasons.push(`Highly rated (${primary.rating.toFixed(1)}★)`);
+    }
+
+    const tags = canonical.bus_type_normalized ?? [];
+    if (tags.includes('AC') && tags.includes('SLEEPER')) {
+      reasons.push('AC Sleeper comfort');
+    }
+
+    if (canonical.cheapest_provider) {
+      reasons.push(`Best price on ${canonical.cheapest_provider}`);
+    }
+
+    return reasons.slice(0, 4);
   }
 
   private computeDealScore(

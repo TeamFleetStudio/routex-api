@@ -8,10 +8,8 @@
     "dev": "tsx watch src/app/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/app/server.js",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:healing": "tsx scripts/test-healing.ts",
-    "probe:brightdata": "tsx scripts/probe-bright-data.ts"
+    "precommit": "npm run build",
+    "prepare": "husky || true"
   },
   "engines": {
     "node": ">=20"
@@ -34,9 +32,9 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
+    "husky": "^9.1.7",
     "pino-pretty": "^13.0.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3",
-    "vitest": "^3.0.2"
+    "typescript": "^5.7.3"
   }
 }

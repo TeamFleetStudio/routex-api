@@ -81,6 +81,8 @@ export interface SimilarAlternative {
   cheapest_price_inr: number | null;
 }
 
+export type BestDealLabel = 'Best Deal' | 'Cheapest' | null;
+
 export interface CanonicalBus {
   canonical_bus_id: string;
   match_tier: 'same' | 'unique';
@@ -95,6 +97,10 @@ export interface CanonicalBus {
   cheapest_price_inr: number | null;
   cheapest_provider: string | null;
   deal_score: number;
+  platform_count: number;
+  save_up_to_inr: number | null;
+  best_deal_label: BestDealLabel;
+  deal_reasons: string[];
   offers: CanonicalOffer[];
   similar_alternatives: SimilarAlternative[];
   listings: NormalizedBusListing[];

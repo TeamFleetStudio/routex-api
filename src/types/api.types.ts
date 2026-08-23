@@ -1,5 +1,6 @@
 import type { CanonicalBus } from './bus.types.js';
 import type { SourceResultMeta } from './source.types.js';
+import type { ProviderProgressEntry } from './search-session.types.js';
 import type { PaginationMeta } from '../utils/pagination.js';
 
 export type SearchStatus = 'SUCCESS' | 'PARTIAL_SUCCESS' | 'SEARCH_FAILED';
@@ -32,4 +33,19 @@ export interface BusSearchResponse {
 export interface HealthResponse {
   status: 'UP' | 'DOWN';
   redis?: 'CONNECTED' | 'DISCONNECTED';
+}
+
+export interface SearchStatusResponse {
+  search_id: string;
+  status: SearchStatus;
+  request_id: string;
+  total_providers: number;
+  completed: number;
+  processing: number;
+  failed: number;
+  skipped: number;
+  progress_percent: number;
+  providers: Record<string, ProviderProgressEntry>;
+  total_buses: number;
+  updating_more_results: boolean;
 }

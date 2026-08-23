@@ -9,6 +9,9 @@ import { createHealthRoutes } from '../routes/health.routes.js';
 import { createBusRoutes } from '../routes/bus.routes.js';
 import { BusSearchController } from '../controllers/bus-search.controller.js';
 import { SearchPaginationController } from '../controllers/search-pagination.controller.js';
+import { SearchStatusController } from '../controllers/search-status.controller.js';
+import { SearchEventsController } from '../controllers/search-events.controller.js';
+import { AnalyticsController } from '../controllers/analytics.controller.js';
 import { DistributedLockService } from '../services/cache/distributed-lock.service.js';
 import { ProviderCacheService } from '../services/cache/provider-cache.service.js';
 import { SearchSessionService } from '../services/cache/search-session.service.js';
@@ -26,6 +29,9 @@ import { DefaultMatchingStrategy } from '../services/matching/default-matching.s
 import { BusMatchingService } from '../services/matching/bus-matching.service.js';
 import { SearchOrchestratorService } from '../services/search/search-orchestrator.service.js';
 import { SearchService } from '../services/search/search.service.js';
+import { SearchEventsService } from '../services/search/search-events.service.js';
+import { SearchFilterService } from '../services/search/search-filter.service.js';
+import { ProviderAnalyticsService } from '../services/analytics/provider-analytics.service.js';
 import { BrightDataClient } from '../sources/implementations/brightdata/bright-data.client.js';
 import { BrightDataSourceClient } from '../sources/implementations/brightdata/bright-data-source.client.js';
 import { UnifiedScraperAdapter } from '../sources/implementations/scraper/unified-scraper.adapter.js';
@@ -88,6 +94,7 @@ export async function buildApp(env: Env) {
   const normalization = new NormalizationService();
   normalization.register(UnifiedScraperAdapter.forSite('redbus'));
   normalization.register(UnifiedScraperAdapter.forSite('makemytrip'));
+  normalization.register(UnifiedScraperAdapter.forSite('cleartrip'));
 
   const brightDataFor = (sourceName: string) =>
     new BrightDataClient({
@@ -116,8 +123,17 @@ export async function buildApp(env: Env) {
       scraperLimit,
     ),
   );
+  registry.registerClient(
+    new BrightDataSourceClient(
+      'cleartrip',
+      brightDataFor('cleartrip'),
+      env.CLEARTrip_COLLECTOR_ID,
+      scraperLimit,
+    ),
+  );
   await registry.seedDefaultsIfMissing();
 
+  const analytics = new ProviderAnalyticsService(redis);
   const executor = new SourceExecutorService(
     circuitBreaker,
     retry,
@@ -128,17 +144,44 @@ export async function buildApp(env: Env) {
     providerCache,
     locks,
     refreshScheduler,
+    analytics,
   );
 
   const matchingScore = new MatchingScoreService();
   const matching = new BusMatchingService(new DefaultMatchingStrategy(matchingScore));
-  const orchestrator = new SearchOrchestratorService(registry, executor, matching, sessionService);
-  const searchService = new SearchService(sessionService, locks, orchestrator, refreshScheduler);
+  const searchEvents = new SearchEventsService();
+  const searchFilter = new SearchFilterService();
+  const orchestrator = new SearchOrchestratorService(
+    registry,
+    executor,
+    matching,
+    sessionService,
+    searchEvents,
+  );
+  const searchService = new SearchService(
+    sessionService,
+    locks,
+    orchestrator,
+    refreshScheduler,
+    searchFilter,
+    searchEvents,
+  );
   const controller = new BusSearchController(searchService);
   const paginationController = new SearchPaginationController(searchService);
+  const statusController = new SearchStatusController(searchService);
+  const eventsController = new SearchEventsController(searchService);
+  const analyticsController = new AnalyticsController(analytics, registry, health);
 
   await app.register(createHealthRoutes(redis));
-  await app.register(createBusRoutes(controller, paginationController));
+  await app.register(
+    createBusRoutes(
+      controller,
+      paginationController,
+      statusController,
+      eventsController,
+      analyticsController,
+    ),
+  );
 
   return { app, redis, env };
 }

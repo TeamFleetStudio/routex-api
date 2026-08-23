@@ -28,6 +28,7 @@ const envSchema = z.object({
   BRIGHT_DATA_BASE_URL: z.string().default('https://api.brightdata.com'),
   REDBUS_COLLECTOR_ID: z.string().default('c_mt5kcpdj13nspwzrzd'),
   MAKEMYTRIP_COLLECTOR_ID: z.string().default('c_mt5m1h3uvef2inukz'),
+  CLEARTrip_COLLECTOR_ID: z.string().default('c_mt5mys6i27rezbm6py'),
   ABHIBUS_COLLECTOR_ID: z.string().default('c_mt494k6m154fl23cty'),
   BRIGHTDATA_CLI_BIN: z.string().default('bdata'),
   SELF_HEALING_CLI_TIMEOUT_SEC: z.coerce.number().int().positive().default(1800),
