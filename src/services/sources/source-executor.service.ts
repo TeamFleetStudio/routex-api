@@ -440,54 +440,14 @@ export class SourceExecutorService {
 
       if (config.self_healing_enabled && this.selfHealing.shouldAttemptHeal(classified.kind)) {
         healingAttempted = true;
-        const healed = await this.selfHealing.tryHeal(source, {
+        // Fire healing in the background — the Bright Data AI refactor takes minutes.
+        // We must not block the current request; the next search will benefit from
+        // the healed collector automatically.
+        void this.selfHealing.tryHeal(source, {
           search,
           failure_kind: classified.kind,
           message: classified.message,
         });
-        if (healed) {
-          try {
-            const raw = await this.withTimeout(
-              () => client.search(search),
-              config.timeout_ms,
-              source,
-            );
-            const normalized = this.normalization.normalize(source, raw.payload, search);
-            if (normalized.length === 0) {
-              throw new NormalizationError(
-                source,
-                'No bus listings extracted from provider response',
-              );
-            }
-            const listings = filterListingsByDepartAfter(normalized, search.depart_after);
-            await this.circuitBreaker.recordSuccess(source);
-            await this.health.recordSuccess(source);
-            logger.info({
-              event: 'SOURCE_SUCCESS',
-              source,
-              duration_ms: Date.now() - started,
-              count: listings.length,
-              after_healing: true,
-            });
-            return {
-              meta: {
-                source,
-                status: 'SUCCESS',
-                duration_ms: Date.now() - started,
-                healing_attempted: true,
-              },
-              listings,
-            };
-          } catch (retryErr) {
-            logger.warn({
-              event: 'SOURCE_FAILED',
-              source,
-              failure_kind: classified.kind,
-              phase: 'post_healing_retry',
-              message: retryErr instanceof Error ? retryErr.message : 'unknown',
-            });
-          }
-        }
       }
 
       const status = classified.kind === 'TIMEOUT' ? 'TIMEOUT' : 'FAILED';

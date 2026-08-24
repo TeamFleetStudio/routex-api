@@ -33,7 +33,9 @@ export class SelfHealingService {
 
   async tryHeal(source: string, context?: HealingContext): Promise<boolean> {
     const lockKey = buildHealingLockKey(source);
-    const token = await this.locks.acquire(lockKey, 60_000);
+    // Lock TTL must cover the full heal timeout to prevent duplicate heals.
+    const lockTtlMs = (this.env.SELF_HEALING_CLI_TIMEOUT_SEC + 60) * 1000;
+    const token = await this.locks.acquire(lockKey, lockTtlMs);
     if (!token) {
       logger.info({ event: 'SELF_HEALING_STARTED', source, skipped: true, reason: 'lock_held' });
       return false;
